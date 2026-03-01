@@ -27,8 +27,7 @@ Dashboard_HTTP_test.xlsx
 test_pie.xlsx
 
 # Scripts temporaires
-do_commit.bat
-push_to_github.bat
+*.bat
 
 # Fichiers temporaires Office
 ~$*.xlsx
