@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <title>📊 Votre Dashboard Excel est prêt !</title>
+  <!--[if mso]>
+  <noscript><xml><o:OfficeDocumentSettings>
+    <o:PixelsPerInch>96</o:PixelsPerInch>
+  </o:OfficeDocumentSettings></xml></noscript>
+  <![endif]-->
+  <style>
+    /* ── Reset email ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+    img { -ms-interpolation-mode: bicubic; border: 0; display: block; }
+    body { margin: 0; padding: 0; width: 100%; background-color: #F0F5FB; }
+
+    /* ── Base styles ─────────────────────────────────────────────────────── */
+    .email-wrapper { width: 100%; background: #F0F5FB; padding: 30px 0; }
+    .email-container {
+      max-width: 620px; margin: 0 auto;
+      background: #FFFFFF; border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(31,78,121,0.12);
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    .header {
+      background: linear-gradient(135deg, #1F4E79 0%, #2E75B6 100%);
+      padding: 40px 40px 48px;
+      text-align: center;
+    }
+    .header-emoji { font-size: 52px; display: block; margin-bottom: 12px; }
+    .header h1 {
+      color: #FFFFFF; font-family: 'Calibri', Arial, sans-serif;
+      font-size: 26px; font-weight: 700; margin: 0 0 8px;
+      line-height: 1.2;
+    }
+    .header p {
+      color: rgba(255,255,255,0.82); font-family: 'Calibri', Arial, sans-serif;
+      font-size: 15px; margin: 0;
+    }
+    .header-wave {
+      background: #FFFFFF; height: 28px;
+      border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+      margin-top: -1px;
+    }
+
+    /* ── Body ────────────────────────────────────────────────────────────── */
+    .body { padding: 32px 40px; }
+    .greeting {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 16px; color: #1A2B3C; margin-bottom: 12px;
+    }
+    .intro {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 15px; color: #3D5A73; line-height: 1.6; margin-bottom: 24px;
+    }
+    .file-badge {
+      display: inline-block;
+      background: #E8F4FD; color: #1F4E79;
+      padding: 3px 10px; border-radius: 20px;
+      font-weight: 700; font-size: 14px;
+    }
+
+    /* ── Section titre ───────────────────────────────────────────────────── */
+    .section-title {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 16px; font-weight: 700; color: #1F4E79;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #D6E4F0;
+      margin-bottom: 16px;
+    }
+
+    /* ── KPI Grid ────────────────────────────────────────────────────────── */
+    .kpi-grid {
+      width: 100%; border-collapse: separate;
+      border-spacing: 10px; margin-bottom: 8px;
+    }
+    .kpi-cell {
+      background: #F4F7FB;
+      border-left: 4px solid #2E75B6;
+      border-radius: 8px;
+      padding: 14px 16px;
+      width: 50%;
+      vertical-align: top;
+    }
+    .kpi-label {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 11px; font-weight: 700;
+      color: #5A6B82;
+      text-transform: uppercase; letter-spacing: 0.8px;
+      display: block; margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 28px; font-weight: 700;
+      color: #1F4E79; display: block; line-height: 1;
+    }
+    .kpi-sub {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 11px; color: #9DAEC3; margin-top: 4px;
+    }
+    .kpi-green { border-left-color: #70AD47; }
+    .kpi-green .kpi-value { color: #375623; }
+    .kpi-orange { border-left-color: #ED7D31; }
+    .kpi-orange .kpi-value { color: #843C00; }
+
+    /* ── Info boîte fichier joint ─────────────────────────────────────────── */
+    .attachment-box {
+      background: #E8F4FD; border: 1.5px solid #ADD4F0;
+      border-radius: 10px; padding: 16px 20px;
+      margin: 24px 0;
+      display: flex; align-items: center; gap: 14px;
+    }
+    .attachment-icon { font-size: 36px; flex-shrink: 0; }
+    .attachment-name {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 14px; font-weight: 700; color: #1F4E79;
+    }
+    .attachment-desc {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 12px; color: #5A6B82; margin-top: 3px;
+    }
+
+    /* ── Onglets preview ─────────────────────────────────────────────────── */
+    .tabs-row {
+      width: 100%; border-collapse: separate;
+      border-spacing: 8px; margin: 20px 0;
+    }
+    .tab-cell {
+      background: #F4F7FB; border: 1px solid #D6E4F0;
+      border-radius: 8px; padding: 12px 14px;
+      text-align: center; width: 33%;
+    }
+    .tab-icon { font-size: 20px; display: block; margin-bottom: 6px; }
+    .tab-name {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 12px; font-weight: 700; color: #1F4E79;
+    }
+
+    /* ── CTA ─────────────────────────────────────────────────────────────── */
+    .cta-section { text-align: center; margin: 28px 0; }
+    .cta-text {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 13px; color: #5A6B82; margin-bottom: 8px;
+    }
+    .cta-note {
+      display: inline-block;
+      background: linear-gradient(135deg, #1F4E79, #2E75B6);
+      color: #FFFFFF;
+      padding: 14px 32px; border-radius: 10px;
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 15px; font-weight: 700;
+      text-decoration: none;
+    }
+
+    /* ── Divider ─────────────────────────────────────────────────────────── */
+    .divider {
+      border: none; border-top: 1.5px solid #E8EDF4;
+      margin: 28px 0;
+    }
+
+    /* ── Tips ────────────────────────────────────────────────────────────── */
+    .tips-box {
+      background: #FFFBF0; border: 1.5px solid #F5D98A;
+      border-radius: 10px; padding: 16px 20px; margin-bottom: 24px;
+    }
+    .tips-title {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 13px; font-weight: 700; color: #7B5C00; margin-bottom: 8px;
+    }
+    .tips-list {
+      margin: 0; padding-left: 18px;
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 13px; color: #5A4500; line-height: 1.7;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    .footer {
+      background: #F4F7FB; padding: 24px 40px;
+      text-align: center;
+      border-top: 1.5px solid #E8EDF4;
+    }
+    .footer p {
+      font-family: 'Calibri', Arial, sans-serif;
+      font-size: 12px; color: #9DAEC3;
+      margin: 4px 0; line-height: 1.5;
+    }
+    .footer a { color: #2E75B6; text-decoration: none; }
+    .footer-logo { font-size: 22px; margin-bottom: 8px; display: block; }
+
+    /* ── Responsive ─────────────────────────────────────────────────────── */
+    @media only screen and (max-width: 480px) {
+      .email-wrapper { padding: 10px 0; }
+      .header { padding: 28px 20px 36px; }
+      .body { padding: 24px 20px; }
+      .header h1 { font-size: 21px; }
+      .kpi-grid, .kpi-cell { display: block; width: 100%; margin-bottom: 10px; }
+      .tabs-row, .tab-cell { display: block; width: 100%; margin-bottom: 8px; }
+      .footer { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+<div class="email-wrapper">
+  <div class="email-container">
+
+    <!-- ── Header ──────────────────────────────────────────────────────── -->
+    <div class="header">
+      <span class="header-emoji">📊</span>
+      <h1>Votre Dashboard Excel est prêt !</h1>
+      <p>Analyse automatique générée avec succès · {{DATE_GENERATION}}</p>
+    </div>
+    <div class="header-wave"></div>
+
+    <!-- ── Body ────────────────────────────────────────────────────────── -->
+    <div class="body">
+
+      <p class="greeting">Bonjour,</p>
+      <p class="intro">
+        Votre fichier <span class="file-badge">📄 {{FILENAME}}</span> a été analysé avec succès.
+        Votre dashboard Excel professionnel est disponible en pièce jointe de cet email.
+      </p>
+
+      <!-- KPIs -->
+      <div class="section-title">🔑 Résumé de l'analyse</div>
+      <table class="kpi-grid">
+        <tr>
+          <td class="kpi-cell">
+            <span class="kpi-label">📋 Enregistrements</span>
+            <span class="kpi-value">{{TOTAL_ROWS}}</span>
+            <span class="kpi-sub">lignes analysées</span>
+          </td>
+          <td class="kpi-cell">
+            <span class="kpi-label">📐 Colonnes</span>
+            <span class="kpi-value">{{TOTAL_COLS}}</span>
+            <span class="kpi-sub">champs détectés</span>
+          </td>
+        </tr>
+        <tr>
+          <td class="kpi-cell kpi-green">
+            <span class="kpi-label">🔢 Colonnes numériques</span>
+            <span class="kpi-value">{{NUM_COLS}}</span>
+            <span class="kpi-sub">données quantitatives</span>
+          </td>
+          <td class="kpi-cell kpi-orange">
+            <span class="kpi-label">🏷️ Colonnes catégorielles</span>
+            <span class="kpi-value">{{CAT_COLS}}</span>
+            <span class="kpi-sub">données qualitatives</span>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Fichier joint -->
+      <div class="attachment-box">
+        <span class="attachment-icon">📎</span>
+        <div>
+          <div class="attachment-name">Dashboard_{{FILENAME_XLSX}}</div>
+          <div class="attachment-desc">
+            Fichier Excel professionnel · Compatible Microsoft Excel &amp; Google Sheets
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglets -->
+      <div class="section-title">📁 Contenu du fichier Excel</div>
+      <table class="tabs-row">
+        <tr>
+          <td class="tab-cell">
+            <span class="tab-icon">📊</span>
+            <div class="tab-name">Dashboard</div>
+          </td>
+          <td class="tab-cell">
+            <span class="tab-icon">📋</span>
+            <div class="tab-name">Données brutes</div>
+          </td>
+          <td class="tab-cell">
+            <span class="tab-icon">🔍</span>
+            <div class="tab-name">Analyse détaillée</div>
+          </td>
+        </tr>
+      </table>
+
+      <!-- Note CTA -->
+      <div class="cta-section">
+        <p class="cta-text">Ouvrez le fichier joint pour accéder à vos graphiques interactifs</p>
+        <span class="cta-note">📂 Ouvrir le Dashboard Excel</span>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- Tips -->
+      <div class="tips-box">
+        <div class="tips-title">💡 Conseils pour une expérience optimale</div>
+        <ul class="tips-list">
+          <li>Ouvrez dans <strong>Microsoft Excel 2016+</strong> pour les graphiques natifs</li>
+          <li>Activez les <strong>macros et le contenu</strong> si demandé</li>
+          <li>Pour Google Sheets : importez via Fichier › Importer</li>
+          <li>Vous pouvez re-générer le dashboard à tout moment via le formulaire</li>
+        </ul>
+      </div>
+
+    </div><!-- /body -->
+
+    <!-- ── Footer ───────────────────────────────────────────────────────── -->
+    <div class="footer">
+      <span class="footer-logo">📊</span>
+      <p><strong>Excel Dashboard Generator</strong></p>
+      <p>Cet email a été généré automatiquement — merci de ne pas y répondre.</p>
+      <p>
+        Généré le {{DATE_GENERATION}} &bull;
+        <a href="#">Politique de confidentialité</a>
+      </p>
+    </div>
+
+  </div><!-- /container -->
+</div><!-- /wrapper -->
+</body>
+</html>

@@ -1,0 +1,274 @@
+{
+  "name": "Excel Dashboard Generator",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 0,
+        "maxResults": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0 },
+        "restore": {
+          "parameters": {
+            "hook": {
+              "label": "Excel Dashboard Webhook",
+              "data": {
+                "editable": true,
+                "types": ["gateway:no-auth"]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "hook",
+            "type": "hook:gateway:no-auth",
+            "label": "Webhook",
+            "required": true
+          },
+          {
+            "name": "maxResults",
+            "type": "number",
+            "label": "Maximum number of results"
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "builtin:BasicFeeder",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "array": "{{1.body}}"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0 },
+        "restore": {}
+      }
+    },
+    {
+      "id": 3,
+      "module": "http:ActionSendData",
+      "version": 3,
+      "parameters": {
+        "handleErrors": true,
+        "useNewZLibDecompress": true
+      },
+      "mapper": {
+        "url": "{{YOUR_PYTHON_API_URL}}/generate-dashboard",
+        "serializeUrl": false,
+        "method": "post",
+        "headers": [
+          {
+            "name": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "qs": [],
+        "bodyType": "raw",
+        "parseResponse": true,
+        "authUser": "",
+        "authPass": "",
+        "timeout": 120,
+        "shareCookies": false,
+        "ca": "",
+        "cert": "",
+        "key": "",
+        "rejectUnauthorized": true,
+        "followRedirect": true,
+        "useQuerystring": false,
+        "gzip": true,
+        "useMtls": false,
+        "contentType": "application/json",
+        "data": "{ \"filename\": \"{{1.body.filename}}\", \"file_data\": \"{{1.body.file_data}}\", \"email\": \"{{1.body.email}}\", \"file_type\": \"{{1.body.file_type}}\" }",
+        "followAllRedirects": false
+      },
+      "metadata": {
+        "designer": { "x": 600, "y": 0 },
+        "restore": {
+          "expect": {
+            "method": { "label": "POST" },
+            "bodyType": { "label": "Raw" },
+            "contentType": { "label": "JSON (application/json)" }
+          }
+        },
+        "expect": [
+          { "name": "url", "type": "url", "label": "URL", "required": true },
+          { "name": "serializeUrl", "type": "boolean", "label": "Serialize URL" },
+          { "name": "method", "type": "select", "label": "Method", "required": true },
+          { "name": "headers", "type": "array", "label": "Headers" },
+          { "name": "qs", "type": "array", "label": "Query String" },
+          { "name": "bodyType", "type": "select", "label": "Body type" },
+          { "name": "data", "type": "string", "label": "Request content" },
+          { "name": "parseResponse", "type": "boolean", "label": "Parse response" },
+          { "name": "timeout", "type": "uinteger", "label": "Timeout" }
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "module": "builtin:SetVariable",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "name": "dashboard_status",
+        "scope": "roundtrip",
+        "type": "any",
+        "value": "{{3.data.status}}"
+      },
+      "metadata": {
+        "designer": { "x": 900, "y": 0 },
+        "restore": {
+          "parameters": {
+            "type": { "label": "Any" },
+            "scope": { "label": "One cycle" }
+          }
+        },
+        "expect": [
+          { "name": "name", "type": "text", "label": "Variable name", "required": true },
+          { "name": "scope", "type": "select", "label": "Variable lifetime", "required": true },
+          { "name": "type", "type": "select", "label": "Variable type", "required": true },
+          { "name": "value", "type": "any", "label": "Variable value" }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "parameters": {},
+      "mapper": [],
+      "metadata": {
+        "designer": { "x": 1200, "y": 0 }
+      },
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 6,
+              "module": "gmail:ActionSendEmail",
+              "version": 1,
+              "parameters": {
+                "account": 0
+              },
+              "filter": {
+                "name": "Dashboard generated successfully",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{3.data.status}}",
+                      "b": "success",
+                      "o": "text:equal"
+                    }
+                  ]
+                ]
+              },
+              "mapper": {
+                "from": "",
+                "to": "{{1.body.email}}",
+                "subject": "📊 Votre Dashboard Excel est prêt !",
+                "bodyType": "html",
+                "html": "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<style>\nbody{font-family:Calibri,Arial,sans-serif;background:#f4f7fb;margin:0;padding:20px;}\n.container{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);}\n.header{background:linear-gradient(135deg,#1F4E79,#2E75B6);padding:40px 30px;text-align:center;color:#fff;}\n.header h1{margin:0;font-size:28px;font-weight:700;}\n.header p{margin:10px 0 0;opacity:0.85;font-size:15px;}\n.body{padding:30px;}\n.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:20px 0;}\n.kpi-card{background:#f4f7fb;border-left:4px solid #2E75B6;border-radius:8px;padding:15px;}\n.kpi-label{font-size:12px;color:#666;text-transform:uppercase;letter-spacing:1px;}\n.kpi-value{font-size:22px;font-weight:700;color:#1F4E79;margin-top:4px;}\n.cta{background:#2E75B6;color:#fff;text-align:center;padding:18px;border-radius:8px;margin:25px 0;}\n.footer{background:#f4f7fb;padding:20px;text-align:center;font-size:12px;color:#999;}\n.badge{display:inline-block;background:#E8F4FD;color:#1F4E79;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;margin:4px;}\n</style>\n</head>\n<body>\n<div class=\"container\">\n  <div class=\"header\">\n    <h1>📊 Votre Dashboard est prêt !</h1>\n    <p>Analyse automatique de vos données générée avec succès</p>\n  </div>\n  <div class=\"body\">\n    <p>Bonjour,</p>\n    <p>Votre fichier <strong>{{1.body.filename}}</strong> a été analysé et votre dashboard Excel professionnel est joint à cet email.</p>\n    <h3 style=\"color:#1F4E79;border-bottom:2px solid #E8F4FD;padding-bottom:8px;\">📈 Résumé de l'analyse</h3>\n    <div class=\"kpi-grid\">\n      <div class=\"kpi-card\">\n        <div class=\"kpi-label\">Enregistrements analysés</div>\n        <div class=\"kpi-value\">{{3.data.kpis.total_rows}}</div>\n      </div>\n      <div class=\"kpi-card\">\n        <div class=\"kpi-label\">Colonnes détectées</div>\n        <div class=\"kpi-value\">{{3.data.kpis.total_columns}}</div>\n      </div>\n      <div class=\"kpi-card\">\n        <div class=\"kpi-label\">Colonnes numériques</div>\n        <div class=\"kpi-value\">{{3.data.kpis.numeric_columns}}</div>\n      </div>\n      <div class=\"kpi-card\">\n        <div class=\"kpi-label\">Colonnes catégorielles</div>\n        <div class=\"kpi-value\">{{3.data.kpis.categorical_columns}}</div>\n      </div>\n    </div>\n    <div style=\"background:#E8F4FD;border-radius:8px;padding:15px;margin:20px 0;\">\n      <strong>📎 Fichier joint :</strong> Dashboard_{{1.body.filename}}<br>\n      <span style=\"color:#666;font-size:13px;\">Ouvrez ce fichier dans Microsoft Excel ou Google Sheets pour une expérience optimale.</span>\n    </div>\n    <p style=\"color:#555;\">Le dashboard contient :</p>\n    <p>\n      <span class=\"badge\">📊 Onglet Dashboard</span>\n      <span class=\"badge\">📋 Données brutes</span>\n      <span class=\"badge\">🔍 Analyse détaillée</span>\n    </p>\n    <div class=\"cta\">Ouvrez le fichier Excel joint pour accéder à vos graphiques interactifs</div>\n  </div>\n  <div class=\"footer\">\n    Généré automatiquement le {{now}} &bull; Excel Dashboard Generator\n  </div>\n</div>\n</body>\n</html>",
+                "attachments": [
+                  {
+                    "fileName": "Dashboard_{{replace(1.body.filename; \".csv\"; \".xlsx\")}}",
+                    "data": "{{3.data.excel_base64}}",
+                    "mime": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  }
+                ],
+                "cc": "",
+                "bcc": "",
+                "importance": "normal"
+              },
+              "metadata": {
+                "designer": { "x": 1500, "y": -150 },
+                "restore": {
+                  "parameters": {
+                    "account": { "label": "Votre compte Gmail" }
+                  },
+                  "expect": {
+                    "bodyType": { "label": "HTML" }
+                  }
+                },
+                "parameters": [
+                  { "name": "account", "type": "account:gmail", "label": "Connection", "required": true }
+                ],
+                "expect": [
+                  { "name": "from", "type": "email", "label": "From" },
+                  { "name": "to", "type": "email", "label": "To", "required": true },
+                  { "name": "subject", "type": "text", "label": "Subject" },
+                  { "name": "bodyType", "type": "select", "label": "Body type" },
+                  { "name": "html", "type": "html", "label": "Content" },
+                  { "name": "attachments", "type": "array", "label": "Attachments" }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 7,
+              "module": "gmail:ActionSendEmail",
+              "version": 1,
+              "parameters": {
+                "account": 0
+              },
+              "filter": {
+                "name": "Error - send error email",
+                "conditions": [
+                  [
+                    {
+                      "a": "{{3.data.status}}",
+                      "b": "error",
+                      "o": "text:equal"
+                    }
+                  ]
+                ]
+              },
+              "mapper": {
+                "to": "{{1.body.email}}",
+                "subject": "⚠️ Erreur lors de la génération de votre dashboard",
+                "bodyType": "html",
+                "html": "<!DOCTYPE html>\n<html>\n<head><meta charset=\"UTF-8\">\n<style>body{font-family:Calibri,Arial,sans-serif;background:#f4f7fb;margin:0;padding:20px;}.container{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);}.header{background:linear-gradient(135deg,#c0392b,#e74c3c);padding:40px 30px;text-align:center;color:#fff;}.header h1{margin:0;font-size:28px;}.body{padding:30px;}.error-box{background:#ffeaea;border-left:4px solid #e74c3c;border-radius:8px;padding:15px;margin:15px 0;}</style>\n</head>\n<body>\n<div class=\"container\">\n  <div class=\"header\"><h1>⚠️ Erreur de traitement</h1></div>\n  <div class=\"body\">\n    <p>Bonjour,</p>\n    <p>Une erreur s'est produite lors du traitement de votre fichier <strong>{{1.body.filename}}</strong>.</p>\n    <div class=\"error-box\"><strong>Détail de l'erreur :</strong><br>{{3.data.error_message}}</div>\n    <h3>Causes possibles :</h3>\n    <ul>\n      <li>Fichier vide ou corrompu</li>\n      <li>Format non reconnu (seuls CSV et XLSX sont acceptés)</li>\n      <li>Fichier protégé par mot de passe</li>\n      <li>Données insuffisantes pour générer un dashboard</li>\n    </ul>\n    <p>Veuillez vérifier votre fichier et réessayer. Si le problème persiste, contactez le support.</p>\n  </div>\n</div>\n</body>\n</html>",
+                "importance": "high"
+              },
+              "metadata": {
+                "designer": { "x": 1500, "y": 150 },
+                "restore": {
+                  "parameters": {
+                    "account": { "label": "Votre compte Gmail" }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": false,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": false,
+      "freshVariables": false
+    },
+    "designer": {
+      "orphans": []
+    },
+    "zone": "eu1.make.com"
+  }
+}

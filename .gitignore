@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.pyc
+
+# Environnements virtuels
+venv/
+env/
+.env
+.venv/
+
+# Fichiers de test locaux
+test_direct.py
+test_local.py
+test_http.py
+test_piechart.py
+check_openpyxl.py
+test_output.txt
+flask_log.txt
+
+# Fichiers Excel générés (output)
+Dashboard_*.xlsx
+Dashboard_HTTP_test.xlsx
+test_pie.xlsx
+
+# Données sensibles
+*.env
+
+# OS
+.DS_Store
+Thumbs.db

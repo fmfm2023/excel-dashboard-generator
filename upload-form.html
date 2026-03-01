@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>📊 Dashboard Excel Generator</title>
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary-dark: #1F4E79;
+      --primary:      #2E75B6;
+      --primary-light:#D6E4F0;
+      --accent:       #70AD47;
+      --accent-dark:  #375623;
+      --warning:      #ED7D31;
+      --danger:       #C00000;
+      --bg:           #F0F5FB;
+      --white:        #FFFFFF;
+      --gray-100:     #F5F7FA;
+      --gray-200:     #E8EDF4;
+      --gray-400:     #9DAEC3;
+      --gray-600:     #5A6B82;
+      --text:         #1A2B3C;
+      --radius:       14px;
+      --shadow:       0 8px 32px rgba(31,78,121,0.12);
+      --shadow-lg:    0 16px 48px rgba(31,78,121,0.18);
+      --transition:   all 0.25s cubic-bezier(0.4,0,0.2,1);
+    }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body {
+      font-family: 'Calibri', 'Segoe UI', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Particles background ──────────────────────────────────────────────── */
+    #particles {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: linear-gradient(135deg, var(--primary-dark) 0%, #0D2B47 100%);
+      overflow: hidden;
+    }
+    .particle {
+      position: absolute; border-radius: 50%;
+      background: rgba(255,255,255,0.06);
+      animation: float linear infinite;
+    }
+    @keyframes float {
+      0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+      10%  { opacity: 1; }
+      90%  { opacity: 0.6; }
+      100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+    }
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
+    main {
+      position: relative; z-index: 1;
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 16px;
+    }
+
+    /* ── Card principale ───────────────────────────────────────────────────── */
+    .card {
+      background: var(--white);
+      border-radius: 20px;
+      box-shadow: var(--shadow-lg);
+      width: 100%; max-width: 620px;
+      overflow: hidden;
+    }
+
+    /* ── En-tête ───────────────────────────────────────────────────────────── */
+    .card-header {
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      padding: 36px 40px 28px;
+      text-align: center;
+      position: relative;
+    }
+    .card-header::after {
+      content: '';
+      position: absolute; bottom: -1px; left: 0; right: 0;
+      height: 30px;
+      background: var(--white);
+      border-radius: 30px 30px 0 0;
+    }
+    .logo { font-size: 48px; margin-bottom: 8px; display: block; }
+    .card-header h1 {
+      color: var(--white); font-size: 1.6rem; font-weight: 700;
+      letter-spacing: -0.5px; margin-bottom: 6px;
+    }
+    .card-header p { color: rgba(255,255,255,0.80); font-size: 0.92rem; }
+
+    /* ── Badges features ───────────────────────────────────────────────────── */
+    .features {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      justify-content: center; margin-top: 14px;
+    }
+    .badge {
+      background: rgba(255,255,255,0.18);
+      color: var(--white);
+      padding: 4px 12px; border-radius: 20px;
+      font-size: 0.78rem; font-weight: 600; letter-spacing: 0.3px;
+    }
+
+    /* ── Corps du formulaire ────────────────────────────────────────────────── */
+    .card-body { padding: 32px 40px 36px; }
+
+    /* ── Zone drag & drop ───────────────────────────────────────────────────── */
+    .dropzone {
+      border: 2.5px dashed var(--gray-400);
+      border-radius: var(--radius);
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      background: var(--gray-100);
+      position: relative;
+    }
+    .dropzone:hover, .dropzone.drag-over {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      transform: scale(1.01);
+    }
+    .dropzone.has-file {
+      border-color: var(--accent);
+      background: #E8F5E3;
+    }
+    .dropzone input[type="file"] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .drop-icon { font-size: 52px; display: block; margin-bottom: 12px; }
+    .drop-title { font-size: 1.05rem; font-weight: 700; color: var(--primary-dark); }
+    .drop-sub   { font-size: 0.84rem; color: var(--gray-600); margin-top: 6px; }
+    .file-info  { display: none; }
+    .file-info.visible {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--white); border-radius: 10px;
+      padding: 10px 14px; margin-top: 14px;
+      border: 1px solid #B7DFB4;
+    }
+    .file-icon { font-size: 24px; }
+    .file-name { font-weight: 700; color: var(--accent-dark); font-size: 0.9rem; }
+    .file-size { color: var(--gray-600); font-size: 0.8rem; }
+    .file-remove {
+      margin-left: auto; background: none; border: none;
+      cursor: pointer; font-size: 18px; color: var(--gray-400);
+      transition: var(--transition);
+    }
+    .file-remove:hover { color: var(--danger); }
+
+    /* ── Champ email ─────────────────────────────────────────────────────────  */
+    .form-group { margin-top: 22px; }
+    .form-group label {
+      display: block; font-weight: 700; font-size: 0.9rem;
+      color: var(--primary-dark); margin-bottom: 8px;
+    }
+    .form-group label span { color: var(--danger); }
+    .input-wrap { position: relative; }
+    .input-wrap .icon {
+      position: absolute; left: 14px; top: 50%;
+      transform: translateY(-50%); font-size: 18px;
+    }
+    .form-group input[type="email"] {
+      width: 100%; padding: 12px 14px 12px 44px;
+      border: 2px solid var(--gray-200); border-radius: 10px;
+      font-size: 0.95rem; font-family: inherit;
+      color: var(--text); background: var(--gray-100);
+      transition: var(--transition); outline: none;
+    }
+    .form-group input[type="email"]:focus {
+      border-color: var(--primary); background: var(--white);
+      box-shadow: 0 0 0 4px rgba(46,117,182,0.12);
+    }
+    .form-group input[type="email"].error { border-color: var(--danger); }
+
+    /* ── Bouton submit ──────────────────────────────────────────────────────── */
+    .btn-submit {
+      width: 100%; margin-top: 24px;
+      padding: 15px;
+      background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+      color: var(--white); border: none; border-radius: 12px;
+      font-size: 1.05rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: var(--transition);
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      letter-spacing: 0.3px;
+    }
+    .btn-submit:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(31,78,121,0.3);
+    }
+    .btn-submit:active:not(:disabled) { transform: translateY(0); }
+    .btn-submit:disabled {
+      background: var(--gray-400); cursor: not-allowed; transform: none;
+    }
+    .btn-icon { font-size: 1.2rem; }
+    .spinner {
+      width: 20px; height: 20px; border: 3px solid rgba(255,255,255,0.4);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Barre de progression ───────────────────────────────────────────────── */
+    .progress-wrap {
+      display: none; margin-top: 20px;
+      background: var(--gray-200); border-radius: 100px;
+      height: 8px; overflow: hidden;
+    }
+    .progress-wrap.visible { display: block; }
+    .progress-bar {
+      height: 100%; width: 0;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      border-radius: 100px;
+      transition: width 0.4s ease;
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0%   { filter: brightness(1); }
+      50%  { filter: brightness(1.3); }
+      100% { filter: brightness(1); }
+    }
+    .progress-label {
+      font-size: 0.82rem; color: var(--gray-600); margin-top: 8px;
+      text-align: center;
+    }
+
+    /* ── Message de statut ──────────────────────────────────────────────────── */
+    .status-msg {
+      display: none; margin-top: 20px;
+      padding: 16px 18px; border-radius: 12px;
+      font-size: 0.92rem; font-weight: 600;
+      align-items: flex-start; gap: 12px;
+    }
+    .status-msg.visible { display: flex; }
+    .status-msg.success {
+      background: #E8F5E3; border: 1.5px solid #B7DFB4; color: var(--accent-dark);
+    }
+    .status-msg.error {
+      background: #FFEAEA; border: 1.5px solid #F5AAAA; color: var(--danger);
+    }
+    .status-icon { font-size: 22px; flex-shrink: 0; }
+    .status-text { line-height: 1.5; }
+
+    /* ── Infos bas de page ──────────────────────────────────────────────────── */
+    .info-strip {
+      margin-top: 16px; padding: 14px 18px;
+      background: var(--gray-100); border-radius: 10px;
+      display: flex; gap: 20px; flex-wrap: wrap;
+      font-size: 0.8rem; color: var(--gray-600);
+    }
+    .info-item { display: flex; align-items: center; gap: 6px; }
+
+    /* ── Footer ─────────────────────────────────────────────────────────────── */
+    footer {
+      position: relative; z-index: 1;
+      text-align: center; padding: 16px;
+      color: rgba(255,255,255,0.5); font-size: 0.78rem;
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .card-header { padding: 28px 20px 24px; }
+      .card-body   { padding: 24px 20px 28px; }
+      .card-header h1 { font-size: 1.3rem; }
+      .info-strip  { flex-direction: column; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Particules animées -->
+<div id="particles"></div>
+
+<main>
+  <div class="card">
+
+    <!-- ── En-tête ──────────────────────────────────────────────────────── -->
+    <div class="card-header">
+      <span class="logo">📊</span>
+      <h1>Dashboard Excel Generator</h1>
+      <p>Uploadez vos données, recevez un dashboard professionnel par email</p>
+      <div class="features">
+        <span class="badge">📈 Graphiques natifs</span>
+        <span class="badge">🔢 KPIs automatiques</span>
+        <span class="badge">📋 Tableaux croisés</span>
+        <span class="badge">🎨 Mise en forme pro</span>
+      </div>
+    </div>
+
+    <!-- ── Corps ────────────────────────────────────────────────────────── -->
+    <div class="card-body">
+      <form id="uploadForm" novalidate>
+
+        <!-- Zone drag & drop -->
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".csv,.xlsx,.xls,.xlsm" />
+          <span class="drop-icon" id="dropIcon">📂</span>
+          <div class="drop-title" id="dropTitle">Glissez votre fichier ici</div>
+          <div class="drop-sub" id="dropSub">ou cliquez pour parcourir · CSV, XLSX · max 50 Mo</div>
+
+          <div class="file-info" id="fileInfo">
+            <span class="file-icon">📄</span>
+            <div>
+              <div class="file-name" id="fileName">—</div>
+              <div class="file-size" id="fileSize">—</div>
+            </div>
+            <button type="button" class="file-remove" id="fileRemove" title="Retirer le fichier">✕</button>
+          </div>
+        </div>
+
+        <!-- Email -->
+        <div class="form-group">
+          <label for="emailInput">
+            📧 Adresse email <span>*</span>
+          </label>
+          <div class="input-wrap">
+            <span class="icon">✉️</span>
+            <input type="email" id="emailInput" placeholder="vous@exemple.com"
+                   autocomplete="email" required />
+          </div>
+        </div>
+
+        <!-- Bouton -->
+        <button type="submit" class="btn-submit" id="submitBtn" disabled>
+          <span class="btn-icon">🚀</span>
+          <span id="btnLabel">Générer mon Dashboard</span>
+        </button>
+
+        <!-- Barre de progression -->
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="progress-label" id="progressLabel"></div>
+
+        <!-- Message de statut -->
+        <div class="status-msg" id="statusMsg">
+          <span class="status-icon" id="statusIcon"></span>
+          <div class="status-text" id="statusText"></div>
+        </div>
+
+        <!-- Infos -->
+        <div class="info-strip">
+          <div class="info-item">🔒 <span>Données traitées de manière sécurisée</span></div>
+          <div class="info-item">⏱️ <span>Livraison en 1-3 minutes</span></div>
+          <div class="info-item">📏 <span>Jusqu'à 10 000 lignes</span></div>
+        </div>
+
+      </form>
+    </div>
+  </div>
+</main>
+
+<footer>© 2025 Excel Dashboard Generator &bull; Propulsé par Make.com &amp; Python/openpyxl</footer>
+
+<script>
+  // ── Configuration ─────────────────────────────────────────────────────────
+  // ⚠️  Remplacez par l'URL de votre webhook Make.com
+  const WEBHOOK_URL = 'https://hook.eu1.make.com/VOTRE_WEBHOOK_ID';
+
+  // ── Particules ────────────────────────────────────────────────────────────
+  (function createParticles() {
+    const container = document.getElementById('particles');
+    for (let i = 0; i < 20; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const size = Math.random() * 60 + 20;
+      p.style.cssText = `
+        width:${size}px; height:${size}px;
+        left:${Math.random() * 100}%;
+        animation-duration:${Math.random() * 15 + 10}s;
+        animation-delay:${Math.random() * 15}s;
+      `;
+      container.appendChild(p);
+    }
+  })();
+
+  // ── Éléments DOM ─────────────────────────────────────────────────────────
+  const dropzone   = document.getElementById('dropzone');
+  const fileInput  = document.getElementById('fileInput');
+  const fileInfo   = document.getElementById('fileInfo');
+  const fileName   = document.getElementById('fileName');
+  const fileSize   = document.getElementById('fileSize');
+  const fileRemove = document.getElementById('fileRemove');
+  const dropIcon   = document.getElementById('dropIcon');
+  const dropTitle  = document.getElementById('dropTitle');
+  const dropSub    = document.getElementById('dropSub');
+  const emailInput = document.getElementById('emailInput');
+  const submitBtn  = document.getElementById('submitBtn');
+  const btnLabel   = document.getElementById('btnLabel');
+  const progressWrap  = document.getElementById('progressWrap');
+  const progressBar   = document.getElementById('progressBar');
+  const progressLabel = document.getElementById('progressLabel');
+  const statusMsg  = document.getElementById('statusMsg');
+  const statusIcon = document.getElementById('statusIcon');
+  const statusText = document.getElementById('statusText');
+
+  let selectedFile = null;
+
+  // ── Formatage taille ─────────────────────────────────────────────────────
+  function formatSize(bytes) {
+    if (bytes < 1024)        return bytes + ' o';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' Ko';
+    return (bytes / 1024 / 1024).toFixed(2) + ' Mo';
+  }
+
+  // ── Gestion du fichier ────────────────────────────────────────────────────
+  function handleFile(file) {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['csv', 'xlsx', 'xls', 'xlsm'].includes(ext)) {
+      showStatus('error', '⛔', 'Format non supporté. Veuillez choisir un fichier CSV ou Excel (.xlsx, .xls, .xlsm).');
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      showStatus('error', '⛔', 'Fichier trop volumineux (limite : 50 Mo).');
+      return;
+    }
+    selectedFile = file;
+    fileName.textContent = file.name;
+    fileSize.textContent = formatSize(file.size);
+    dropIcon.textContent = '✅';
+    dropTitle.style.display = 'none';
+    dropSub.style.display = 'none';
+    fileInfo.classList.add('visible');
+    dropzone.classList.add('has-file');
+    hideStatus();
+    updateSubmitState();
+  }
+
+  function removeFile() {
+    selectedFile = null;
+    fileInput.value = '';
+    fileInfo.classList.remove('visible');
+    dropzone.classList.remove('has-file');
+    dropIcon.textContent = '📂';
+    dropTitle.style.display = '';
+    dropSub.style.display = '';
+    hideStatus();
+    updateSubmitState();
+  }
+
+  function updateSubmitState() {
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailInput.value.trim());
+    submitBtn.disabled = !(selectedFile && emailOk);
+  }
+
+  // ── Événements drag & drop ────────────────────────────────────────────────
+  dropzone.addEventListener('dragover',  e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', ()  => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+  fileRemove.addEventListener('click', e => { e.stopPropagation(); removeFile(); });
+  emailInput.addEventListener('input', updateSubmitState);
+
+  // ── Affichage des statuts ─────────────────────────────────────────────────
+  function showStatus(type, icon, text) {
+    statusMsg.className = `status-msg visible ${type}`;
+    statusIcon.textContent = icon;
+    statusText.innerHTML = text;
+  }
+  function hideStatus() {
+    statusMsg.className = 'status-msg';
+  }
+
+  // ── Animation de progression ──────────────────────────────────────────────
+  function startProgress() {
+    progressWrap.classList.add('visible');
+    progressLabel.textContent = 'Envoi du fichier en cours…';
+    let pct = 0;
+    return setInterval(() => {
+      if (pct < 85) {
+        pct += Math.random() * 8;
+        progressBar.style.width = Math.min(pct, 85) + '%';
+        if (pct > 40) progressLabel.textContent = 'Analyse des données…';
+        if (pct > 70) progressLabel.textContent = 'Génération du dashboard Excel…';
+      }
+    }, 400);
+  }
+
+  function finishProgress(success) {
+    progressBar.style.width = '100%';
+    progressLabel.textContent = success ? '✅ Traitement terminé !' : '❌ Échec du traitement';
+    setTimeout(() => {
+      progressWrap.classList.remove('visible');
+      progressBar.style.width = '0';
+    }, 2000);
+  }
+
+  // ── Conversion fichier en base64 ──────────────────────────────────────────
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => {
+        // Retirer le préfixe "data:...;base64,"
+        const b64 = reader.result.split(',')[1];
+        resolve(b64);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // ── Soumission du formulaire ──────────────────────────────────────────────
+  document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selectedFile || submitBtn.disabled) return;
+
+    const email = emailInput.value.trim();
+
+    // UI : état loading
+    submitBtn.disabled = true;
+    btnLabel.textContent = 'Traitement en cours…';
+    const spinner = document.createElement('div');
+    spinner.className = 'spinner';
+    submitBtn.prepend(spinner);
+    hideStatus();
+
+    const progressTimer = startProgress();
+
+    try {
+      const b64 = await fileToBase64(selectedFile);
+      const ext  = selectedFile.name.split('.').pop().toLowerCase();
+
+      const payload = {
+        filename:  selectedFile.name,
+        file_data: b64,
+        email:     email,
+        file_type: ext,
+      };
+
+      const resp = await fetch(WEBHOOK_URL, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify(payload),
+      });
+
+      clearInterval(progressTimer);
+      finishProgress(resp.ok);
+
+      if (resp.ok) {
+        showStatus('success', '🎉',
+          `Votre fichier <strong>${selectedFile.name}</strong> a bien été reçu !<br>
+           Votre dashboard Excel sera envoyé à <strong>${email}</strong> dans quelques minutes.<br>
+           <span style="font-weight:400;font-size:0.88em;">
+           Pensez à vérifier votre dossier spam si vous ne le recevez pas sous 5 minutes.
+           </span>`
+        );
+        removeFile();
+        emailInput.value = '';
+      } else {
+        const errBody = await resp.text().catch(() => '');
+        showStatus('error', '⚠️',
+          `Erreur lors de l'envoi (HTTP ${resp.status}). Veuillez réessayer.<br>
+           <small style="color:#999;">${errBody.slice(0, 120)}</small>`
+        );
+      }
+
+    } catch (err) {
+      clearInterval(progressTimer);
+      finishProgress(false);
+      console.error(err);
+      showStatus('error', '🌐',
+        `Impossible de joindre le serveur. Vérifiez votre connexion ou réessayez plus tard.<br>
+         <small style="color:#999;">${err.message}</small>`
+      );
+    } finally {
+      // Restaurer le bouton
+      spinner.remove();
+      btnLabel.textContent = 'Générer mon Dashboard';
+      updateSubmitState();
+    }
+  });
+</script>
+</body>
+</html>
