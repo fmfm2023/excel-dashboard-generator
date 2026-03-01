@@ -26,6 +26,7 @@ from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 from openpyxl.chart.label import DataLabelList
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.dataframe import dataframe_to_rows
+from openpyxl.worksheet.table import Table, TableStyleInfo
 import chardet
 import warnings
 warnings.filterwarnings('ignore')
@@ -541,6 +542,23 @@ def build_raw_data_sheet(wb, df, numeric_cols, date_cols):
     # Figer la ligne d'en-tête
     ws.freeze_panes = ws['A2']
 
+    # ── Vrai Tableau Excel (filtres, tri, auto-expand) ────────────────────────
+    try:
+        tab = Table(
+            displayName="TableDonnees",
+            ref=f"A1:{get_column_letter(n_cols)}{n_rows + 1}"
+        )
+        tab.tableStyleInfo = TableStyleInfo(
+            name="TableStyleMedium9",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False
+        )
+        ws.add_table(tab)
+    except Exception as e:
+        logger.warning(f'Table Données brutes: {e}')
+
     # Mise en forme conditionnelle sur colonnes numériques
     for col_name in numeric_cols[:3]:
         col_idx = list(df.columns).index(col_name) + 1
@@ -698,6 +716,91 @@ def build_analysis_sheet(wb, df, kpis, numeric_cols, date_cols, cat_cols):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Onglet Source pour TCD (données plates avec Table Excel)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def build_tcd_source_sheet(wb, df, numeric_cols, date_cols):
+    """Feuille source TCD — données plates avec Table Excel, prête pour créer un TCD."""
+    ws = wb.create_sheet('📝 Source pour TCD')
+    ws.sheet_view.showGridLines = False
+
+    n_cols = len(df.columns)
+    n_rows = len(df)
+
+    # ── Bandeau d'instructions ────────────────────────────────────────────────
+    ws.merge_cells(f'A1:{get_column_letter(max(n_cols, 4))}1')
+    cell = ws['A1']
+    cell.value = (
+        '💡 Pour créer un TCD : cliquer dans la table ci-dessous '
+        '→ onglet Insertion → Tableau croisé dynamique → OK'
+    )
+    cell.font = Font(name='Calibri', size=10, italic=True, color='595959')
+    cell.fill = PatternFill(fgColor='FFF2CC', fill_type='solid')
+    cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ws.row_dimensions[1].height = 30
+
+    # ── Ligne vide de séparation ───────────────────────────────────────────────
+    ws.row_dimensions[2].height = 6
+
+    # ── En-têtes de la table (ligne 3) ────────────────────────────────────────
+    for col_idx, col_name in enumerate(df.columns, 1):
+        cell = ws.cell(row=3, column=col_idx, value=col_name)
+        cell.font = Font(name='Calibri', size=10, bold=True, color='FFFFFF')
+        cell.fill = PatternFill(fgColor=COLORS['primary'], fill_type='solid')
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = thin_border(COLORS['primary_dark'])
+    ws.row_dimensions[3].height = 20
+
+    # ── Données (à partir de la ligne 4) ──────────────────────────────────────
+    for row_idx, (_, row_data) in enumerate(df.iterrows(), 4):
+        for col_idx, (col_name, value) in enumerate(row_data.items(), 1):
+            if isinstance(value, (np.integer,)):
+                value = int(value)
+            elif isinstance(value, (np.floating,)):
+                value = float(value) if not np.isnan(value) else None
+            elif isinstance(value, (pd.Timestamp, np.datetime64)):
+                try:
+                    value = pd.Timestamp(value).to_pydatetime()
+                except Exception:
+                    value = str(value)
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            cell.font = Font(name='Calibri', size=9)
+            cell.border = thin_border()
+            if col_name in numeric_cols:
+                cell.number_format = '#,##0.00'
+                cell.alignment = Alignment(horizontal='right', vertical='center')
+            elif col_name in date_cols:
+                cell.number_format = 'DD/MM/YYYY'
+
+    # ── Ajuster largeurs ───────────────────────────────────────────────────────
+    for col_idx in range(1, n_cols + 1):
+        col_letter = get_column_letter(col_idx)
+        max_len = max(
+            len(str(df.columns[col_idx - 1])),
+            df.iloc[:, col_idx - 1].astype(str).str.len().max()
+        )
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 12), 40)
+
+    # ── Vrai Tableau Excel (permet de créer un TCD dessus) ─────────────────────
+    try:
+        tab_ref = f"A3:{get_column_letter(n_cols)}{n_rows + 3}"
+        tab = Table(displayName="SourceTCD", ref=tab_ref)
+        tab.tableStyleInfo = TableStyleInfo(
+            name="TableStyleLight1",
+            showFirstColumn=False,
+            showLastColumn=False,
+            showRowStripes=True,
+            showColumnStripes=False
+        )
+        ws.add_table(tab)
+    except Exception as e:
+        logger.warning(f'Table Source TCD: {e}')
+
+    ws.freeze_panes = ws['A4']
+    return ws
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Orchestration principale
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -743,6 +846,9 @@ def generate_excel_dashboard(file_bytes, filename):
 
     # 4d) Onglet Analyse détaillée
     build_analysis_sheet(wb, df, kpis, numeric_cols, date_cols, cat_cols)
+
+    # 4e) Onglet Source pour TCD (données plates, Table Excel, prêt pour TCD)
+    build_tcd_source_sheet(wb, df, numeric_cols, date_cols)
 
     # 5) Propriétés du classeur
     wb.properties.title = f'Dashboard — {filename}'
