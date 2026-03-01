@@ -274,8 +274,11 @@ def load_dataframe(file_bytes, filename):
             df = pd.read_excel(io.BytesIO(file_bytes), header=hdr, dtype=str)
 
         # Forcer conversion numérique colonne par colonne
+        # (pandas 2.2+ : errors='ignore' supprimé → on simule avec coerce + seuil)
         for col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='ignore')
+            converted = pd.to_numeric(df[col], errors='coerce')
+            if converted.notna().mean() > 0.5:   # >50% valeurs numériques → garder
+                df[col] = converted
         df.columns = [str(c).strip() for c in df.columns]
         return df
     except Exception as e:
