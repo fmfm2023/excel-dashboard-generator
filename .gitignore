@@ -26,16 +26,8 @@ Dashboard_*.xlsx
 Dashboard_HTTP_test.xlsx
 test_pie.xlsx
 
-# Scripts temporaires
-*.bat
-
-# Fichiers temporaires Office
-~$*.xlsx
-~$*.xls
-~$*.docx
-
-# Claude interne
-.claude/
+# Données sensibles
+*.env
 
 # OS
 .DS_Store

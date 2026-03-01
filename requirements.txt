@@ -1,21 +1,9 @@
-# Excel Dashboard Generator — Dépendances Python
-# Testé avec Python 3.10+
-# Installation : pip install -r requirements.txt
-
-# ── Framework web ──────────────────────────────────────────────────────────
-flask==3.0.3
-gunicorn==22.0.0          # Serveur de production (Linux/Mac)
-waitress==3.0.0           # Serveur de production (Windows)
-
-# ── Traitement des données ─────────────────────────────────────────────────
-pandas==2.2.2
-numpy==1.26.4
-openpyxl==3.1.5           # Lecture/écriture Excel + graphiques natifs
-xlrd==2.0.1               # Lecture fichiers .xls (ancien format)
-
-# ── Détection d'encodage ───────────────────────────────────────────────────
-chardet==5.2.0
-
-# ── Sécurité & utilitaires ─────────────────────────────────────────────────
-python-dotenv==1.0.1      # Chargement variables d'environnement
-werkzeug==3.0.3           # Dépendance Flask
+flask>=3.0.0
+gunicorn>=22.0.0
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+xlrd>=2.0.1
+chardet>=5.0.0
+python-dotenv>=1.0.0
+werkzeug>=3.0.0
