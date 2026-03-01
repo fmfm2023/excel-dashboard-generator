@@ -154,6 +154,53 @@ def trend_arrow(v):
     if v < 0:  return ('▼', W['down'])
     return ('→', W['flat'])
 
+def safe_val(v):
+    """Convertit toute valeur invalide pour openpyxl en None (→ cellule vide)."""
+    if v is None:
+        return None
+    # Python float NaN / Inf
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return None
+    # NumPy scalaires NaN / Inf
+    try:
+        if isinstance(v, np.floating) and (np.isnan(v) or np.isinf(v)):
+            return None
+        if isinstance(v, np.integer):
+            return int(v)
+    except Exception:
+        pass
+    # pd.NaT, pd.NA, pd.NAType
+    na_str = str(type(v).__name__).lower()
+    if 'nat' in na_str or 'natype' in na_str:
+        return None
+    try:
+        if v is pd.NaT or v is pd.NA:
+            return None
+    except Exception:
+        pass
+    return v
+
+def safe_float(v, default=0.0):
+    """Convertit v en float Python sûr (NaN/Inf/NaT → default)."""
+    try:
+        f = float(v)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return f
+    except Exception:
+        return default
+
+def clean_float_kpi(v):
+    """Remplace NaN/Inf par None pour les KPIs optionnels."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    except Exception:
+        return None
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 3 — DATA CLEANING & LOADING
@@ -313,18 +360,20 @@ def compute_advanced_kpis(df, cm):
         kpis['statut_vc'] = {}
 
     rem_col = cm.get('remise')
-    kpis['remise_moy'] = float(pd.to_numeric(df[rem_col], errors='coerce').mean()) \
+    _rem = float(pd.to_numeric(df[rem_col], errors='coerce').mean()) \
         if rem_col and rem_col in df.columns else None
+    kpis['remise_moy'] = clean_float_kpi(_rem)
     tva_col = cm.get('tva')
-    kpis['tva_total'] = float(pd.to_numeric(df[tva_col], errors='coerce').sum()) \
+    _tva = float(pd.to_numeric(df[tva_col], errors='coerce').sum()) \
         if tva_col and tva_col in df.columns else 0.0
+    kpis['tva_total'] = clean_float_kpi(_tva) or 0.0
 
     # Évolution mensuelle
     if 'Mois/Année' in df.columns and ca_col and ca_col in df.columns:
         monthly = (df.groupby('Mois/Année')[ca_col]
                    .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
                    .sort_index())
-        kpis['monthly_ca'] = {str(k): float(v) for k, v in monthly.items()}
+        kpis['monthly_ca'] = {str(k): safe_float(v) for k, v in monthly.items()}
         ml = monthly.tolist()
         if len(ml) >= 2 and ml[-2] != 0:
             kpis['mom_growth'] = (ml[-1] - ml[-2]) / abs(ml[-2]) * 100
@@ -340,9 +389,11 @@ def compute_advanced_kpis(df, cm):
     def _top(role, n=8):
         col = cm.get(role)
         if col and col in df.columns and ca_col and ca_col in df.columns:
-            return (df.groupby(col)[ca_col]
-                    .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
-                    .sort_values(ascending=False).head(n).to_dict())
+            raw = (df.groupby(col)[ca_col]
+                   .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+                   .sort_values(ascending=False).head(n).to_dict())
+            # Normaliser: clés str, valeurs float sûres
+            return {str(k): safe_float(v) for k, v in raw.items()}
         return {}
 
     kpis['top_produits']   = _top('produit')
@@ -516,8 +567,8 @@ def build_modern_dashboard(wb, df, kpis, cm, insights):
     n_m = len(sorted_months)
     ws.cell(10, 22, 'Mois');  ws.cell(10, 23, 'CA (€)')
     for i, (m, v) in enumerate(sorted_months, 1):
-        ws.cell(10 + i, 22, m)
-        ws.cell(10 + i, 23, float(v))
+        ws.cell(10 + i, 22, str(m))
+        ws.cell(10 + i, 23, safe_float(v))
 
     # Area Chart — Évolution CA mensuel
     if n_m >= 2:
@@ -542,7 +593,7 @@ def build_modern_dashboard(wb, df, kpis, cm, insights):
     ws.cell(10, 25, 'Segment');  ws.cell(10, 26, 'CA')
     for i, (lbl, v) in enumerate(top_seg, 1):
         ws.cell(10 + i, 25, str(lbl)[:20])
-        ws.cell(10 + i, 26, float(v))
+        ws.cell(10 + i, 26, safe_float(v))
     if n_seg >= 2:
         pie = PieChart()
         pie.title  = "Répartition CA"
@@ -660,7 +711,7 @@ def build_evolution_sheet(wb, df, kpis, cm):
         r = 4 + idx
         rbg = W['white'] if idx % 2 == 0 else W['muted']
         ws.cell(r, 1, m);   s(ws.cell(r, 1), bg=rbg, fg=W['txt_dark'], sz=10, h='center', v='center')
-        ws.cell(r, 2, round(v, 2))
+        ws.cell(r, 2, round(safe_float(v), 2))
         s(ws.cell(r, 2), bg=rbg, fg=W['txt_dark'], sz=10, h='right', v='center',
           nf='# ##0.00 €')
         if prev_v and prev_v != 0:
@@ -890,16 +941,16 @@ def build_raw_data_sheet(wb, df, cm):
         for j, val in enumerate(row, 1):
             col_name = cols_disp[j - 1]
             cell = ws.cell(i, j)
-            # Formater valeur
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                if math.isnan(val) if isinstance(val, float) else False:
-                    cell.value = ''
-                else:
-                    cell.value = val
-                    if ca_col and col_name == ca_col:
-                        cell.number_format = '# ##0.00 €'
+            # Formater valeur — passer par safe_val pour éviter NaN/Inf/NaT
+            sv = safe_val(val)
+            if sv is None:
+                cell.value = ''
+            elif isinstance(sv, (int, float)) and not isinstance(sv, bool):
+                cell.value = sv
+                if ca_col and col_name == ca_col:
+                    cell.number_format = '# ##0.00 €'
             else:
-                cell.value = str(val) if val is not None and str(val) != 'nan' else ''
+                cell.value = str(sv) if str(sv) != 'nan' else ''
             bg = rbg
             fg = W['txt_dark']
             # Couleur statut
@@ -951,7 +1002,8 @@ def build_tcd_source_sheet(wb, df, cm):
         rbg = W['white'] if i % 2 == 0 else W['muted']
         for j, val in enumerate(row, 1):
             cell = ws.cell(i, j)
-            cell.value = '' if (val is None or str(val) == 'nan') else val
+            sv = safe_val(val)
+            cell.value = sv if (sv is not None and str(sv) != 'nan') else ''
             s(cell, bg=rbg, fg=W['txt_dark'], sz=10, h='center', v='center')
         rh(ws, i, 15)
 
@@ -1068,11 +1120,15 @@ def generate_dashboard():
         return jsonify(result)
 
     except ValueError as ve:
-        logger.error(f"ValueError: {ve}")
-        return jsonify({'status': 'error', 'message': str(ve)}), 422
+        import traceback as _tb
+        tb_str = _tb.format_exc()
+        logger.error(f"ValueError: {ve}\n{tb_str}")
+        return jsonify({'status': 'error', 'message': str(ve), 'traceback': tb_str}), 422
     except Exception as e:
-        logger.error(f"Erreur inattendue: {e}", exc_info=True)
-        return jsonify({'status': 'error', 'message': f'Erreur serveur: {str(e)}'}), 500
+        import traceback as _tb
+        tb_str = _tb.format_exc()
+        logger.error(f"Erreur inattendue: {e}\n{tb_str}", exc_info=False)
+        return jsonify({'status': 'error', 'message': f'Erreur serveur: {str(e)}', 'traceback': tb_str}), 500
 
 
 @app.route('/generate-from-upload', methods=['POST'])
