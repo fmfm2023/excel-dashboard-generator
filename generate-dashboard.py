@@ -1341,7 +1341,7 @@ def generate_excel_dashboard(file_bytes, filename, user_email=''):
 def health():
     return jsonify({
         'status':    'ok',
-        'version':   '3.0.0',
+        'version':   '4.0.0',
         'timestamp': datetime.now().isoformat(),
     })
 
