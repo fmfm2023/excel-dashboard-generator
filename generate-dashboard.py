@@ -201,6 +201,13 @@ def clean_float_kpi(v):
     except Exception:
         return None
 
+def fnum(v):
+    """Formate un nombre entier avec séparateur milliers (sans symbole devise)."""
+    try:
+        return f"{int(round(float(v))):,}".replace(',', ' ')
+    except Exception:
+        return str(v) if v is not None else '0'
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 3 — DATA CLEANING & LOADING
@@ -290,22 +297,33 @@ def load_dataframe(file_bytes, filename):
 # PART 4 — DÉTECTION DES COLONNES
 # ══════════════════════════════════════════════════════════════════════════════
 def detect_columns(df):
-    """Mappe les colonnes à des rôles sémantiques (FR/EN)."""
+    """Mappe les colonnes à des rôles sémantiques (FR/EN + pharma/stock)."""
     cm = {}
     low = {c.lower().strip(): c for c in df.columns}
     ROLES = {
-        'date':     ['date', 'jour', 'day', 'time', 'période'],
-        'client':   ['client', 'customer', 'acheteur', 'compte'],
-        'produit':  ['produit', 'product', 'article', 'item', 'désignation', 'libellé'],
-        'categorie':['catégorie', 'categorie', 'category', 'famille', 'gamme', 'type produit'],
-        'marque':   ['marque', 'brand', 'fabricant'],
-        'quantite': ['quantité', 'quantite', 'qte', 'qty', 'quantity', 'volume'],
-        'remise':   ['remise', 'discount', 'rabais', 'réduction', 'taux remise'],
-        'ca':       ['total ttc', 'total ht', 'chiffre', 'montant', 'revenue', 'total', 'amount'],
-        'tva':      ['tva', 'vat', 'taxe'],
-        'statut':   ['statut', 'status', 'état', 'etat'],
-        'vendeur':  ['vendeur', 'seller', 'commercial', 'agent'],
-        'region':   ['région', 'region', 'zone', 'territoire', 'pays', 'ville'],
+        'date':       ['date', 'jour', 'day', 'time', 'période'],
+        'peremption': ['peremption', 'péremption', 'expiry', 'expiration', 'expire'],
+        'client':     ['client', 'customer', 'acheteur', 'compte'],
+        'produit':    ['produit', 'product', 'article', 'item', 'désignation', 'libellé',
+                       'medicament', 'médicament', 'nom_med', 'nom med'],
+        'categorie':  ['catégorie', 'categorie', 'category', 'famille', 'gamme',
+                       'type produit', 'gamme_therapeutique', 'therapeutique'],
+        'marque':     ['marque', 'brand', 'fabricant', 'forme', 'laboratoire'],
+        'quantite':   ['quantité', 'quantite', 'qte', 'qty', 'quantity', 'volume'],
+        'stock':      ['stock_actuel', 'stock actuel', 'stock', 'inventaire', 'disponible'],
+        'prix':       ['prix_unitaire', 'prix unitaire', 'prix', 'price', 'tarif', 'coût', 'cout'],
+        'objectif':   ['objectif_vente', 'objectif vente', 'objectif', 'target', 'cible',
+                       'budget', 'prevision', 'prévision'],
+        'realise':    ['ventes_realisees', 'ventes realisees', 'vente_realisee', 'realise',
+                       'réalisé', 'realisee', 'achieved', 'actual'],
+        'delegue':    ['delegue_medical', 'delegue medical', 'délégué', 'delegue',
+                       'representant', 'rep'],
+        'remise':     ['remise', 'discount', 'rabais', 'réduction', 'taux remise'],
+        'ca':         ['total ttc', 'total ht', 'chiffre', 'montant', 'revenue', 'total', 'amount'],
+        'tva':        ['tva', 'vat', 'taxe'],
+        'statut':     ['statut', 'status', 'état', 'etat'],
+        'vendeur':    ['vendeur', 'seller', 'commercial'],
+        'region':     ['région', 'region', 'zone', 'territoire', 'pays', 'ville'],
     }
     for role, kws in ROLES.items():
         for kw in kws:
@@ -323,6 +341,14 @@ def detect_columns(df):
         if 'ca' in cm:
             break
 
+    # Fallback CA : si pas de CA mais 'realise' détecté → utiliser réalisé comme CA
+    if 'ca' not in cm and 'realise' in cm:
+        cm['ca'] = cm['realise']
+
+    # Fallback vendeur → délégué médical
+    if 'vendeur' not in cm and 'delegue' in cm:
+        cm['vendeur'] = cm['delegue']
+
     logger.info(f"Colonnes détectées: {list(cm.keys())}")
     return cm
 
@@ -331,7 +357,7 @@ def detect_columns(df):
 # PART 5 — KPIs AVANCÉS
 # ══════════════════════════════════════════════════════════════════════════════
 def compute_advanced_kpis(df, cm):
-    """Calcule CA, MoM/YoY, panier, statuts, top segments."""
+    """Calcule CA, MoM/YoY, panier, statuts, top segments + KPIs pharma/stock."""
     kpis = {'n_rows': len(df)}
     ca_col = cm.get('ca')
     kpis['ca_col'] = ca_col
@@ -389,24 +415,97 @@ def compute_advanced_kpis(df, cm):
         kpis['mom_growth'] = kpis['yoy_growth'] = None
 
     # Top segments
-    def _top(role, n=8):
+    def _top(role, val_role='ca', n=8):
         col = cm.get(role)
-        if col and col in df.columns and ca_col and ca_col in df.columns:
-            raw = (df.groupby(col)[ca_col]
+        vcol = cm.get(val_role) or ca_col
+        if col and col in df.columns and vcol and vcol in df.columns:
+            raw = (df.groupby(col)[vcol]
                    .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
                    .sort_values(ascending=False).head(n).to_dict())
-            # Normaliser: clés str, valeurs float sûres
             return {str(k): safe_float(v) for k, v in raw.items()}
         return {}
 
     kpis['top_produits']   = _top('produit')
     kpis['top_categories'] = _top('categorie')
     kpis['top_vendeurs']   = _top('vendeur')
+    kpis['top_delegues']   = _top('delegue', 'realise') or _top('delegue')
     for role in ('produit', 'categorie', 'vendeur'):
         col = cm.get(role)
         kpis[f'n_{role}s'] = int(df[col].nunique()) if col and col in df.columns else 0
 
-    logger.info(f"KPIs: CA={kpis['ca_total']:.0f} rows={kpis['n_rows']} clients={kpis['n_clients']}")
+    # ── KPIs PHARMA / STOCK ──────────────────────────────────────────────────
+    stock_col  = cm.get('stock')
+    prix_col   = cm.get('prix')
+    obj_col    = cm.get('objectif')
+    real_col   = cm.get('realise')
+    # Ne pas confondre realise == ca (fallback) avec un vrai réalisé distinct
+    real_is_ca = (real_col == ca_col)
+    delg_col   = cm.get('delegue')
+    perm_col   = cm.get('peremption')
+
+    # Stock total + ruptures
+    if stock_col and stock_col in df.columns:
+        stock_s = pd.to_numeric(df[stock_col], errors='coerce')
+        kpis['stock_total']  = float(stock_s.sum())
+        kpis['n_ruptures']   = int((stock_s == 0).sum())
+        kpis['stock_faible'] = int(((stock_s > 0) & (stock_s < stock_s.mean() * 0.2)).sum()) \
+            if stock_s.mean() > 0 else 0
+    else:
+        kpis['stock_total'] = kpis['n_ruptures'] = kpis['stock_faible'] = None
+
+    # CA Potentiel = sum(stock × prix)
+    if stock_col and prix_col and stock_col in df.columns and prix_col in df.columns:
+        stk = pd.to_numeric(df[stock_col], errors='coerce').fillna(0)
+        prx = pd.to_numeric(df[prix_col],  errors='coerce').fillna(0)
+        kpis['ca_potentiel'] = float((stk * prx).sum())
+    else:
+        kpis['ca_potentiel'] = None
+
+    # Taux réalisation (objectif vs réalisé)
+    # Calculer si obj et realise sont deux colonnes DISTINCTES et toutes deux présentes
+    if obj_col and real_col and obj_col != real_col \
+            and obj_col in df.columns and real_col in df.columns:
+        obj_s  = pd.to_numeric(df[obj_col],  errors='coerce').fillna(0)
+        real_s = pd.to_numeric(df[real_col], errors='coerce').fillna(0)
+        obj_t  = float(obj_s.sum())
+        real_t = float(real_s.sum())
+        kpis['objectif_total']         = obj_t
+        kpis['realise_total']          = real_t
+        kpis['taux_realisation_global'] = (real_t / obj_t * 100) if obj_t > 0 else None
+
+        # Performance par délégué
+        if delg_col and delg_col in df.columns:
+            grp_o = df.groupby(delg_col)[obj_col].apply(
+                lambda x: pd.to_numeric(x, errors='coerce').sum())
+            grp_r = df.groupby(delg_col)[real_col].apply(
+                lambda x: pd.to_numeric(x, errors='coerce').sum())
+            perf = []
+            for name in grp_o.index:
+                o = safe_float(grp_o.get(name, 0))
+                r = safe_float(grp_r.get(name, 0))
+                t = (r / o * 100) if o > 0 else 0
+                perf.append({'delegue': str(name), 'objectif': o, 'realise': r, 'taux': t})
+            perf.sort(key=lambda x: x['taux'], reverse=True)
+            kpis['perf_delegues'] = perf
+        else:
+            kpis['perf_delegues'] = []
+    else:
+        kpis['objectif_total'] = kpis['realise_total'] = None
+        kpis['taux_realisation_global'] = None
+        kpis['perf_delegues'] = []
+
+    # Péremptions (alertes)
+    if perm_col and perm_col in df.columns:
+        today = pd.Timestamp.now()
+        d90   = today + pd.Timedelta(days=90)
+        perm_s = pd.to_datetime(df[perm_col], errors='coerce')
+        kpis['n_perimes']          = int((perm_s < today).sum())
+        kpis['n_peremption_proche'] = int(((perm_s >= today) & (perm_s <= d90)).sum())
+    else:
+        kpis['n_perimes'] = kpis['n_peremption_proche'] = None
+
+    logger.info(f"KPIs: CA={kpis['ca_total']:.0f} rows={kpis['n_rows']} "
+                f"stock={kpis.get('stock_total')} taux_real={kpis.get('taux_realisation_global')}")
     return kpis
 
 
@@ -417,9 +516,15 @@ def generate_insights(df, kpis, cm):
     """Génère 3 insights analytiques automatiques."""
     insights = []
 
-    # Insight 1 — tendance MoM
-    mom = kpis.get('mom_growth')
-    if mom is not None:
+    # Insight 1 — taux réalisation ou tendance MoM
+    taux_r = kpis.get('taux_realisation_global')
+    mom    = kpis.get('mom_growth')
+    if taux_r is not None:
+        icon = '✅' if taux_r >= 100 else ('⚠️' if taux_r >= 80 else '🔴')
+        qual = 'atteint' if taux_r >= 100 else ('presque atteint' if taux_r >= 80 else 'insuffisant')
+        insights.append(f"{icon} Taux de réalisation global : {taux_r:.1f}% — objectif {qual}. "
+                        f"({fnum(kpis.get('realise_total',0))} / {fnum(kpis.get('objectif_total',0))})")
+    elif mom is not None:
         d = 'progression' if mom >= 0 else 'recul'
         e = '📈' if mom >= 0 else '📉'
         insights.append(f"{e} Tendance MoM : {d} de {abs(mom):.1f}% du CA vs mois précédent.")
@@ -427,17 +532,27 @@ def generate_insights(df, kpis, cm):
         ml = list(kpis['monthly_ca'].keys())
         insights.append(f"📊 Données sur {len(ml)} période(s) · de {ml[0]} à {ml[-1]}.")
     else:
-        insights.append(f"📦 {kpis['n_rows']} transactions analysées.")
+        insights.append(f"📦 {kpis['n_rows']} enregistrements analysés.")
 
-    # Insight 2 — top performer
-    tv = kpis.get('top_vendeurs', {})
-    tp = kpis.get('top_produits', {})
-    total = kpis.get('ca_total', 1) or 1
-    if tv:
+    # Insight 2 — stock/ruptures ou top performer
+    n_rupt = kpis.get('n_ruptures')
+    n_perm = kpis.get('n_peremption_proche')
+    ca_pot = kpis.get('ca_potentiel')
+    tv     = kpis.get('top_delegues', {}) or kpis.get('top_vendeurs', {})
+    tp     = kpis.get('top_produits', {})
+    total  = kpis.get('ca_total', 1) or 1
+    if n_rupt is not None:
+        stk_tot = kpis.get('stock_total', 0) or 0
+        insights.append(
+            f"📦 Stock total : {fnum(stk_tot)} unités · {n_rupt} rupture(s)"
+            + (f" · {n_perm} produit(s) périmant dans 90j" if n_perm else "")
+            + (f" · CA potentiel : {feur(ca_pot)}" if ca_pot else "")
+        )
+    elif tv:
         k, v = list(tv.items())[0]
         pct = v / total * 100
         conc = 'élevée' if pct > 40 else 'équilibrée'
-        insights.append(f"🏆 Top vendeur : {k} · {pct:.1f}% du CA ({feur(v)}) — concentration {conc}.")
+        insights.append(f"🏆 Top délégué/vendeur : {k} · {pct:.1f}% du CA ({feur(v)}) — concentration {conc}.")
     elif tp:
         k, v = list(tp.items())[0]
         insights.append(f"🏆 Top produit : « {str(k)[:25]} » · {v/total*100:.1f}% du CA ({feur(v)}).")
@@ -446,7 +561,15 @@ def generate_insights(df, kpis, cm):
     ann  = kpis.get('taux_annulation') or 0
     rem  = kpis.get('remise_moy')
     cats = list(kpis.get('top_categories', {}).items())[:2]
-    if ann > 15:
+    perf = kpis.get('perf_delegues', [])
+    if perf:
+        top_d    = perf[0]
+        bottom_d = perf[-1] if len(perf) > 1 else None
+        msg = f"🏆 Meilleur délégué : {top_d['delegue']} ({top_d['taux']:.0f}%)"
+        if bottom_d and bottom_d['taux'] < 80:
+            msg += f" · À améliorer : {bottom_d['delegue']} ({bottom_d['taux']:.0f}%)"
+        insights.append(msg)
+    elif ann > 15:
         insights.append(f"⚠️ Taux d'annulation élevé ({ann:.1f}%) — analyser stock & délais pour réduire les pertes.")
     elif rem and rem > 10:
         gain = kpis['ca_total'] * 0.02
@@ -459,19 +582,88 @@ def generate_insights(df, kpis, cm):
 
     # Compléter à 3
     while len(insights) < 3:
-        insights.append(f"👥 {kpis['n_clients']} clients actifs · panier moyen {feur(kpis.get('panier_moy', 0))}.")
+        insights.append(f"📊 {kpis['n_rows']} enregistrements · {kpis.get('n_produits', 0)} produits.")
     return insights[:3]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PART 7 — DASHBOARD PRINCIPAL (Modern Infographic)
 # ══════════════════════════════════════════════════════════════════════════════
+def _build_kpi_cards(kpis, cm):
+    """Construit 4 cartes KPI dynamiques selon les données disponibles."""
+    col_positions = [2, 7, 12, 17]
+
+    # Card 1 (indigo) — Principal chiffre de vente / réalisé
+    real_total = kpis.get('realise_total')
+    ca_total   = kpis.get('ca_total', 0)
+    if real_total and real_total > 0:
+        c1 = ('VENTES RÉALISÉES', fnum(real_total), None,
+              f"Objectif : {fnum(kpis.get('objectif_total', 0))}",
+              W['k1'], W['k1_l'], col_positions[0])
+    else:
+        c1 = ('CA TOTAL', feur(ca_total), kpis.get('mom_growth'),
+              f"{kpis['n_rows']} enregistrements",
+              W['k1'], W['k1_l'], col_positions[0])
+
+    # Card 2 (émeraude) — Taux réalisation ou croissance MoM
+    taux = kpis.get('taux_realisation_global')
+    if taux is not None:
+        delta = taux - 100
+        c2 = ('TAUX RÉALISATION', f"{taux:.1f}%",
+              delta if abs(delta) > 0.1 else None,
+              'vs Objectif fixé',
+              W['k2'], W['k2_l'], col_positions[1])
+    else:
+        mom = kpis.get('mom_growth')
+        c2 = ('CROISSANCE MoM',
+              fpct(mom) if mom is not None else '—',
+              mom, 'vs mois précédent',
+              W['k2'], W['k2_l'], col_positions[1])
+
+    # Card 3 (ambre) — CA potentiel ou Stock total ou Panier moyen
+    ca_pot     = kpis.get('ca_potentiel')
+    stock_tot  = kpis.get('stock_total')
+    if ca_pot and ca_pot > 0:
+        c3 = ('CA POTENTIEL', feur(ca_pot), None,
+              'Stock × Prix unitaire',
+              W['k3'], W['k3_l'], col_positions[2])
+    elif stock_tot and stock_tot > 0:
+        c3 = ('STOCK TOTAL', fnum(stock_tot), None,
+              f"Ruptures : {kpis.get('n_ruptures', 0)}",
+              W['k3'], W['k3_l'], col_positions[2])
+    else:
+        c3 = ('PANIER MOYEN', feur(kpis.get('panier_moy', 0)), None,
+              f"{kpis.get('n_clients', 0)} clients",
+              W['k3'], W['k3_l'], col_positions[2])
+
+    # Card 4 (sky) — Ruptures stock ou Taux livraison ou Nb produits
+    n_rupt = kpis.get('n_ruptures')
+    if n_rupt is not None:
+        n_exp = kpis.get('n_peremption_proche') or 0
+        c4 = ('RUPTURES STOCK', str(n_rupt),
+              -float(n_rupt) if n_rupt > 0 else None,
+              f"Péremption <90j : {n_exp}",
+              W['k4'], W['k4_l'], col_positions[3])
+    elif kpis.get('taux_livraison') is not None:
+        c4 = ('TAUX LIVRAISON',
+              fpct(kpis.get('taux_livraison')), None,
+              f"Annul. : {fpct(kpis.get('taux_annulation'))}",
+              W['k4'], W['k4_l'], col_positions[3])
+    else:
+        n_p = kpis.get('n_produits') or kpis.get('n_categories') or kpis['n_rows']
+        c4 = ('NB PRODUITS', str(n_p), None,
+              cm.get('produit', 'Références'),
+              W['k4'], W['k4_l'], col_positions[3])
+
+    return [c1, c2, c3, c4]
+
+
 def build_modern_dashboard(wb, df, kpis, cm, insights):
     ws = wb.create_sheet('📊 Dashboard')
     ws.sheet_view.showGridLines = False
     ws.sheet_view.showRowColHeaders = False
 
-    # ── Colonnes : Marge|Card1(B-E)|Gap|Card2(G-J)|Gap|Card3(L-O)|Gap|Card4(Q-T)|Marge
+    # ── Colonnes
     cw(ws, 1, 1.5)
     for ci in range(2, 6):   cw(ws, ci, 12)    # B-E card1
     cw(ws, 6, 1.5)
@@ -481,75 +673,53 @@ def build_modern_dashboard(wb, df, kpis, cm, insights):
     cw(ws, 16, 1.5)
     for ci in range(17, 21): cw(ws, ci, 12)    # Q-T card4
     cw(ws, 21, 1.5)
-    for ci in range(22, 30): cw(ws, ci, 15)    # data zone cachée
+    for ci in range(22, 40): cw(ws, ci, 15)    # data zone cachée
 
-    # ── Hauteurs de lignes ─────────────────────────────────────────────────
+    # ── Hauteurs de lignes
     rh(ws, 1, 8);  rh(ws, 2, 35); rh(ws, 3, 8)
     rh(ws, 4, 5);  rh(ws, 5, 28); rh(ws, 6, 18); rh(ws, 7, 18); rh(ws, 8, 5)
     rh(ws, 9, 22)
-    for r in range(10, 34): rh(ws, r, 14)
-    rh(ws, 34, 22)
-    for r in range(35, 50): rh(ws, r, 16)
-    rh(ws, 50, 14)
+    for r in range(10, 33): rh(ws, r, 14)
+    rh(ws, 33, 22)
+    for r in range(34, 56): rh(ws, r, 14)
+    rh(ws, 56, 22)
+    for r in range(57, 72): rh(ws, r, 20)
+    rh(ws, 72, 22)
+    for r in range(73, 84): rh(ws, r, 22)
+    rh(ws, 84, 14)
 
-    # ── Fond général bg légèrement bleu ────────────────────────────────────
-    for r in range(1, 53):
+    # ── Fond général
+    for r in range(1, 87):
         for c in range(1, 30):
             ws.cell(r, c).fill = fill(W['bg'])
 
-    # ── HEADER (rows 1-2) ─────────────────────────────────────────────────
+    # ── HEADER (rows 1-2)
     for r in [1, 2]:
         for c in range(1, 22):
             ws.cell(r, c).fill = fill(W['hdr_bg'])
     mg(ws, 2, 2, 2, 14, '📊  DASHBOARD ANALYTIQUE — MODERN BI v3',
        bg=W['hdr_bg'], fg=W['white'], sz=18, bold=True, h='left', v='center')
     mg(ws, 2, 15, 2, 20,
-       f"{datetime.now().strftime('%d/%m/%Y')} · {kpis['n_rows']} transactions",
+       f"{datetime.now().strftime('%d/%m/%Y')} · {kpis['n_rows']} enregistrements",
        bg=W['hdr_bg'], fg=W['txt_light'], sz=9, h='right', v='center')
     for c in range(1, 22):
         ws.cell(2, c).border = bottom_border(W['hdr_accent'])
 
-    # ── KPI CARDS ─────────────────────────────────────────────────────────
-    cards = [
-        ('CA TOTAL',
-         feur(kpis.get('ca_total', 0)),
-         kpis.get('mom_growth'),
-         f"{kpis['n_rows']} transactions",
-         W['k1'], W['k1_l'], 2),
-        ('CROISSANCE MoM',
-         fpct(kpis.get('mom_growth')) if kpis.get('mom_growth') is not None else '—',
-         kpis.get('mom_growth'),
-         'vs mois précédent',
-         W['k2'], W['k2_l'], 7),
-        ('PANIER MOYEN',
-         feur(kpis.get('panier_moy', 0)),
-         None,
-         f"{kpis['n_clients']} clients",
-         W['k3'], W['k3_l'], 12),
-        ('TAUX LIVRAISON',
-         fpct(kpis.get('taux_livraison')) if kpis.get('taux_livraison') is not None else '—',
-         None,
-         f"Annul.: {fpct(kpis.get('taux_annulation'))}",
-         W['k4'], W['k4_l'], 17),
-    ]
+    # ── KPI CARDS (dynamiques)
+    cards = _build_kpi_cards(kpis, cm)
     for lbl, val, growth, sub, acc, light, col in cards:
-        # Fond carte + bordure fine
         for r in range(4, 9):
             for c in range(col, col + 4):
                 ws.cell(r, c).fill = fill(W['card'])
                 ws.cell(r, c).border = full_accent_border(W['card_border'])
-        # Bande accent gauche
         for r in range(4, 9):
             ws.cell(r, col).fill = fill(acc)
-        # Valeur principale
         ws.merge_cells(start_row=5, start_column=col+1, end_row=5, end_column=col+3)
         cell_v = ws.cell(5, col+1, val)
         s(cell_v, bg=W['card'], fg=acc, sz=20, bold=True, h='left', v='center')
-        # Label KPI
         ws.merge_cells(start_row=6, start_column=col+1, end_row=6, end_column=col+3)
         cell_l = ws.cell(6, col+1, lbl)
         s(cell_l, bg=W['card'], fg=W['txt_mid'], sz=9, bold=True, h='left', v='center')
-        # Tendance / sous-titre
         if growth is not None:
             arr, arr_c = trend_arrow(growth)
             sub_txt = f"{arr} {fpct(abs(growth))}  ·  {sub}"
@@ -560,122 +730,200 @@ def build_modern_dashboard(wb, df, kpis, cm, insights):
         cell_s = ws.cell(7, col+1, sub_txt)
         s(cell_s, bg=W['card'], fg=arr_c, sz=9, h='left', v='center')
 
-    # ── LABEL DE SECTION ─────────────────────────────────────────────────
-    mg(ws, 9, 2, 9, 20, '  📈  ÉVOLUTION DU CA & RÉPARTITION',
+    # ── SECTION GRAPHIQUES
+    mg(ws, 9, 2, 9, 20, '  📈  ANALYSE GRAPHIQUE',
        bg=W['bg'], fg=W['txt_dark'], sz=11, bold=True, h='left', v='center')
 
-    # ── DONNÉES GRAPHIQUES (colonnes 22-29, ligne 10+) ────────────────────
-    monthly = kpis.get('monthly_ca', {})
-    sorted_months = sorted(monthly.items())[:18]
-    n_m = len(sorted_months)
-    ws.cell(10, 22, 'Mois');  ws.cell(10, 23, 'CA (€)')
-    for i, (m, v) in enumerate(sorted_months, 1):
-        ws.cell(10 + i, 22, str(m))
-        ws.cell(10 + i, 23, safe_float(v))
+    # ── DONNÉES pour graphiques (colonnes cachées 22+)
+    DC = 22   # DATA_COL_START
 
-    # Area Chart — Évolution CA mensuel
-    if n_m >= 2:
-        ac = AreaChart()
-        ac.title    = "Évolution CA"
-        ac.style    = 10
-        ac.grouping = 'standard'
-        cats_ref = Reference(ws, min_col=22, min_row=11, max_row=10 + n_m)
-        data_ref = Reference(ws, min_col=23, min_row=10, max_row=10 + n_m)
-        ac.add_data(data_ref, titles_from_data=True)
-        ac.set_categories(cats_ref)
-        ser = ac.series[0]
-        ser.graphicalProperties.solidFill = W['k1']
-        ser.graphicalProperties.line.solidFill = W['k1']
-        ac.width = 12.5;  ac.height = 9
-        ws.add_chart(ac, 'B10')
+    # --- Graphique 1 : Bar par catégorie/gamme (DC, DC+1)
+    cat_col = cm.get('categorie') or cm.get('produit')
+    val_col = cm.get('realise') or cm.get('ca')
+    chart1_data = []
+    if cat_col and val_col and cat_col in df.columns and val_col in df.columns:
+        grp = (df.groupby(cat_col)[val_col]
+               .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+               .sort_values(ascending=False).head(8))
+        chart1_data = [(str(k)[:22], safe_float(v)) for k, v in grp.items()]
+    ws.cell(10, DC, 'Segment');  ws.cell(10, DC+1, 'Valeur')
+    for i, (lb, vl) in enumerate(chart1_data, 1):
+        ws.cell(10+i, DC, lb);  ws.cell(10+i, DC+1, vl)
+    n_c1 = len(chart1_data)
+    if n_c1 >= 2:
+        bc = BarChart()
+        bc.type = 'col';  bc.style = 10;  bc.grouping = 'clustered'
+        bc.title = f"Ventes par {cat_col or 'Segment'}"
+        cats_r = Reference(ws, min_col=DC,   min_row=11, max_row=10+n_c1)
+        data_r = Reference(ws, min_col=DC+1, min_row=10, max_row=10+n_c1)
+        bc.add_data(data_r, titles_from_data=True)
+        bc.set_categories(cats_r)
+        bc.series[0].graphicalProperties.solidFill = W['k1']
+        bc.series[0].graphicalProperties.line.solidFill = W['k1']
+        bc.width = 12.5;  bc.height = 9
+        ws.add_chart(bc, 'B10')
 
-    # Pie Chart — Répartition CA par segment
-    top_seg = (list(kpis.get('top_categories', {}).items())[:6]
-               or list(kpis.get('top_produits', {}).items())[:6])
+    # --- Graphique 2 : Line Objectif vs Réalisé (DC+2, DC+3, DC+4)
+    obj_col  = cm.get('objectif')
+    real_col = cm.get('realise')
+    real_is_ca = (real_col == cm.get('ca'))
+    chart2_data = []
+    line_s2 = None
+    if obj_col and real_col and obj_col != real_col \
+            and obj_col in df.columns and real_col in df.columns and cat_col in df.columns:
+        grp_o = (df.groupby(cat_col)[obj_col]
+                 .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+                 .sort_values(ascending=False).head(8))
+        grp_r = (df.groupby(cat_col)[real_col]
+                 .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+                 .reindex(grp_o.index))
+        chart2_data = [(str(k)[:22], safe_float(vo), safe_float(vr))
+                       for (k, vo), vr in zip(grp_o.items(), grp_r.values)]
+        line_title = f"Objectif vs Réalisé par {cat_col}"
+        line_s1 = 'Objectif';  line_s2 = 'Réalisé'
+    else:
+        monthly = kpis.get('monthly_ca', {})
+        sm = sorted(monthly.items())[:18]
+        chart2_data = [(str(m), safe_float(v), None) for m, v in sm]
+        line_title = "Évolution CA Mensuel";  line_s1 = 'CA'
+    ws.cell(10, DC+2, 'Label');  ws.cell(10, DC+3, line_s1)
+    if line_s2:
+        ws.cell(10, DC+4, line_s2)
+    for i, rd in enumerate(chart2_data, 1):
+        ws.cell(10+i, DC+2, rd[0]);  ws.cell(10+i, DC+3, rd[1])
+        if rd[2] is not None:
+            ws.cell(10+i, DC+4, rd[2])
+    n_c2 = len(chart2_data)
+    if n_c2 >= 2:
+        lc = LineChart();  lc.style = 10;  lc.title = line_title
+        cats_r = Reference(ws, min_col=DC+2, min_row=11, max_row=10+n_c2)
+        max_c  = DC+4 if (line_s2 and any(rd[2] is not None for rd in chart2_data)) else DC+3
+        data_r = Reference(ws, min_col=DC+3, min_row=10, max_row=10+n_c2, max_col=max_c)
+        lc.add_data(data_r, titles_from_data=True)
+        lc.set_categories(cats_r)
+        for i, (clr, wt) in enumerate([(W['k1'], 2.5), (W['k2'], 2.0)]):
+            if i < len(lc.series):
+                lc.series[i].graphicalProperties.line.solidFill = clr
+                lc.series[i].graphicalProperties.line.width = int(wt * 12700)
+                lc.series[i].marker.symbol = 'circle'
+                lc.series[i].marker.size   = 5
+        lc.width = 12.5;  lc.height = 9
+        ws.add_chart(lc, 'L10')
+
+    # ── SECTION RÉPARTITION & TOP
+    mg(ws, 33, 2, 33, 20, '  🎯  RÉPARTITION & TOP PERFORMERS',
+       bg=W['bg'], fg=W['txt_dark'], sz=11, bold=True, h='left', v='center')
+
+    # --- Graphique 3 : Pie/Doughnut répartition (DC+5, DC+6)
+    top_seg = (list(kpis.get('top_categories', {}).items())[:7]
+               or list(kpis.get('top_produits', {}).items())[:7])
+    if not top_seg and cat_col and val_col \
+            and cat_col in df.columns and val_col in df.columns:
+        grp = (df.groupby(cat_col)[val_col]
+               .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+               .sort_values(ascending=False).head(7))
+        top_seg = [(str(k)[:22], safe_float(v)) for k, v in grp.items()]
     n_seg = len(top_seg)
-    ws.cell(10, 25, 'Segment');  ws.cell(10, 26, 'CA')
-    for i, (lbl, v) in enumerate(top_seg, 1):
-        ws.cell(10 + i, 25, str(lbl)[:20])
-        ws.cell(10 + i, 26, safe_float(v))
+    ws.cell(34, DC+5, 'Segment');  ws.cell(34, DC+6, 'Valeur')
+    for i, (lb, vl) in enumerate(top_seg, 1):
+        ws.cell(34+i, DC+5, str(lb)[:22]);  ws.cell(34+i, DC+6, safe_float(vl))
     if n_seg >= 2:
-        pie = PieChart()
-        pie.title  = "Répartition CA"
-        pie.style  = 10
-        cats_p = Reference(ws, min_col=25, min_row=11, max_row=10 + n_seg)
-        data_p = Reference(ws, min_col=26, min_row=10, max_row=10 + n_seg)
+        pie = PieChart();  pie.style = 10;  pie.title = "Répartition par Segment"
+        cats_p = Reference(ws, min_col=DC+5, min_row=35, max_row=34+n_seg)
+        data_p = Reference(ws, min_col=DC+6, min_row=34, max_row=34+n_seg)
         pie.add_data(data_p, titles_from_data=True)
         pie.set_categories(cats_p)
         pie.dataLabels = DataLabelList()
-        pie.dataLabels.showPercent  = True
-        pie.dataLabels.showCatName  = True
+        pie.dataLabels.showPercent = True
+        pie.dataLabels.showCatName = True
         for i in range(n_seg):
             pt = DataPoint(idx=i)
             pt.graphicalProperties.solidFill = CHART_PAL[i % len(CHART_PAL)]
             pie.series[0].dPt.append(pt)
         pie.width = 12.5;  pie.height = 9
-        ws.add_chart(pie, 'L10')
+        ws.add_chart(pie, 'B34')
 
-    # ── SECTION BAS : TOP 5 & AI INSIGHTS ────────────────────────────────
-    mg(ws, 33, 2, 33, 20, '  🏆  TOP SEGMENTS & 🤖 AI INSIGHTS',
-       bg=W['bg'], fg=W['txt_dark'], sz=11, bold=True, h='left', v='center')
+    # --- Graphique 4 : Top-10 horizontal bar (DC+7, DC+8)
+    top_items = (list(kpis.get('top_delegues', {}).items())[:10]
+                 or list(kpis.get('top_vendeurs', {}).items())[:10]
+                 or list(kpis.get('top_produits', {}).items())[:10])
+    top_label = (cm.get('delegue') or cm.get('vendeur') or cm.get('produit') or 'Top')
+    n_top = len(top_items)
+    ws.cell(34, DC+7, str(top_label)[:14]);  ws.cell(34, DC+8, 'Valeur')
+    for i, (lb, vl) in enumerate(top_items, 1):
+        ws.cell(34+i, DC+7, str(lb)[:25]);  ws.cell(34+i, DC+8, safe_float(vl))
+    if n_top >= 2:
+        hb = BarChart();  hb.type = 'bar';  hb.style = 10;  hb.grouping = 'clustered'
+        hb.title = f"Top {top_label}"
+        cats_h = Reference(ws, min_col=DC+7, min_row=35, max_row=34+n_top)
+        data_h = Reference(ws, min_col=DC+8, min_row=34, max_row=34+n_top)
+        hb.add_data(data_h, titles_from_data=True)
+        hb.set_categories(cats_h)
+        hb.series[0].graphicalProperties.solidFill = W['k4']
+        hb.series[0].graphicalProperties.line.solidFill = W['k4']
+        hb.width = 12.5;  hb.height = 9
+        ws.add_chart(hb, 'L34')
 
-    # TOP 5 TABLE (cols 2-10)
-    top_items = (list(kpis.get('top_produits', {}).items())
-                 or list(kpis.get('top_categories', {}).items()))[:5]
-    seg_lbl = cm.get('produit', cm.get('categorie', 'Segment'))
-    hdrs = ['#', str(seg_lbl)[:14], 'CA (€)', '% Part', 'Tendance']
-    for j, h_txt in enumerate(hdrs):
-        ci = 2 + j
-        cell = ws.cell(34, ci, h_txt)
-        s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+    # ── SECTION PERFORMANCE DÉLÉGUÉS
+    perf_data = kpis.get('perf_delegues', [])
+    if perf_data:
+        mg(ws, 56, 2, 56, 20, '  📊  PERFORMANCE DÉLÉGUÉS — TAUX DE RÉALISATION',
+           bg=W['bg'], fg=W['txt_dark'], sz=11, bold=True, h='left', v='center')
+        hdrs_p = ['Délégué', 'Objectif', 'Réalisé', 'Taux %', 'Progression']
+        h_cols = [2, 6, 9, 12, 14]
+        for h_txt, ci in zip(hdrs_p, h_cols):
+            cell = ws.cell(57, ci, h_txt)
+            s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+        for idx, pd_row in enumerate(perf_data[:10]):
+            r_p  = 58 + idx
+            taux = pd_row.get('taux', 0) or 0
+            rbg  = W['k2_l'] if taux >= 100 else (W['k3_l'] if taux >= 80 else W['down_l'])
+            bar_len  = min(int(taux / 10), 10)
+            prog_bar = '█' * bar_len + '░' * (10 - bar_len)
+            row_vals = [
+                (2,  str(pd_row.get('delegue', ''))[:30], W['txt_dark'], True),
+                (6,  fnum(pd_row.get('objectif', 0)),      W['txt_mid'],  False),
+                (9,  fnum(pd_row.get('realise', 0)),
+                     W['k2'] if taux >= 100 else W['k1'],  True),
+                (12, f"{taux:.1f}%",
+                     W['k2'] if taux >= 100 else W['down'], True),
+                (14, prog_bar, W['k2'] if taux >= 100 else W['k3'], False),
+            ]
+            for ci, cv, fg_c, bold_c in row_vals:
+                cell = ws.cell(r_p, ci, cv)
+                s(cell, bg=rbg, fg=fg_c, sz=10, bold=bold_c,
+                  h='left' if ci == 2 else 'center')
+                cell.border = thin_border(W['sep'])
 
-    total_ca = kpis.get('ca_total', 1) or 1
-    row_bgs  = [W['white'], W['muted']]
-    for idx, (lbl, val) in enumerate(top_items, 1):
-        r    = 34 + idx
-        pct  = val / total_ca * 100
-        rbg  = row_bgs[idx % 2]
-        bars = '█' * min(int(pct / 5) + 1, 10)
-        row_data = [str(idx), str(lbl)[:28], feur(val), fpct(pct), bars]
-        for j, cv in enumerate(row_data):
-            ci   = 2 + j
-            cell = ws.cell(r, ci, cv)
-            fg   = W['k1'] if j == 4 else W['txt_dark']
-            s(cell, bg=rbg, fg=fg, sz=10, bold=(j == 1),
-              h='center' if j != 1 else 'left')
-            cell.border = thin_border(W['sep'])
-
-    # AI INSIGHTS (cols 12-20)
-    ws.merge_cells(start_row=34, start_column=12, end_row=34, end_column=20)
-    cell_hi = ws.cell(34, 12, '  🤖  AI INSIGHTS')
-    s(cell_hi, bg=W['hdr_bg'], fg=W['white'], sz=11, bold=True, h='left', v='center')
-
+    # ── AI INSIGHTS
+    mg(ws, 72, 2, 72, 20, '  🤖  AI INSIGHTS',
+       bg=W['hdr_bg'], fg=W['white'], sz=11, bold=True, h='left', v='center')
     ins_bgs  = [W['k1_l'], W['k2_l'], W['k3_l']]
     ins_accs = [W['k1'],   W['k2'],   W['k3']]
     for i, txt in enumerate(insights):
-        r     = 35 + i * 4
-        bg_i  = ins_bgs[i]
-        acc_i = ins_accs[i]
+        r     = 73 + i * 4
+        bg_i  = ins_bgs[i % 3]
+        acc_i = ins_accs[i % 3]
         for rr in range(r, r + 3):
-            for cc in range(12, 21):
+            for cc in range(2, 21):
                 ws.cell(rr, cc).fill = fill(bg_i)
-            ws.cell(rr, 12).fill = fill(acc_i)
+            ws.cell(rr, 2).fill = fill(acc_i)
         try:
-            ws.merge_cells(start_row=r, start_column=13, end_row=r+2, end_column=20)
+            ws.merge_cells(start_row=r, start_column=3, end_row=r+2, end_column=20)
         except Exception:
             pass
-        cell_i = ws.cell(r, 13, txt)
+        cell_i = ws.cell(r, 3, txt)
         s(cell_i, bg=bg_i, fg=W['txt_dark'], sz=10, h='left', v='center', wrap=True)
 
-    # FOOTER
+    # ── FOOTER
     for c in range(1, 22):
-        ws.cell(50, c).fill = fill(W['hdr_bg'])
-    ws.merge_cells(start_row=50, start_column=2, end_row=50, end_column=20)
-    cell_f = ws.cell(50, 2, 'Dashboard Excel Generator v3.0 · Modern BI · Expert Data Analyst')
+        ws.cell(84, c).fill = fill(W['hdr_bg'])
+    ws.merge_cells(start_row=84, start_column=2, end_row=84, end_column=20)
+    cell_f = ws.cell(84, 2, 'Dashboard Excel Generator v3.0 · Modern BI · Expert Data Analyst')
     s(cell_f, bg=W['hdr_bg'], fg=W['txt_light'], sz=9, h='center', v='center')
 
     # Masquer colonnes data
-    for c in range(22, 30):
+    for c in range(22, 40):
         ws.column_dimensions[get_column_letter(c)].hidden = True
     return ws
 
