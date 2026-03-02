@@ -220,6 +220,19 @@ def clean_dataframe(df):
         logger.info(f"Doublons supprimés : {before - len(df)}")
     df.columns = [str(c).strip() for c in df.columns]
 
+    # Supprimer lignes de totaux/résumés (ex: "TOTAL", "Sous-total", "Somme")
+    SUMMARY_KEYWORDS = {'total', 'totaux', 'sous-total', 'sous total',
+                        'somme', 'grand total', 'subtotal', 'total général'}
+    str_cols = df.select_dtypes(include='object').columns.tolist()
+    if str_cols:
+        mask = df[str_cols].apply(
+            lambda col: col.astype(str).str.strip().str.lower().isin(SUMMARY_KEYWORDS)
+        ).any(axis=1)
+        n_removed = int(mask.sum())
+        if n_removed > 0:
+            df = df[~mask].reset_index(drop=True)
+            logger.info(f"Lignes résumé supprimées : {n_removed}")
+
     # Nettoyer colonnes monétaires habillées (€, $, %, espaces)
     for col in df.columns:
         if df[col].dtype == object:
@@ -370,7 +383,18 @@ def compute_advanced_kpis(df, cm):
 
     cli_col = cm.get('client')
     kpis['n_clients'] = int(df[cli_col].nunique()) if cli_col and cli_col in df.columns else 0
-    kpis['panier_moy'] = kpis['ca_total'] / max(kpis['n_clients'], 1)
+    if kpis['n_clients'] > 0:
+        kpis['panier_moy'] = kpis['ca_total'] / kpis['n_clients']
+    else:
+        # Fallback: prix moyen par transaction (CA / nb lignes)
+        kpis['panier_moy'] = kpis['ca_total'] / max(kpis['n_rows'], 1)
+
+    # Prix moyen unitaire (si colonne prix détectée)
+    prix_col_p = cm.get('prix')
+    if prix_col_p and prix_col_p in df.columns:
+        kpis['prix_moyen'] = float(pd.to_numeric(df[prix_col_p], errors='coerce').mean())
+    else:
+        kpis['prix_moyen'] = None
 
     # Statuts
     stat_col = cm.get('statut')
@@ -605,7 +629,7 @@ def _build_kpi_cards(kpis, cm):
               f"{kpis['n_rows']} enregistrements",
               W['k1'], W['k1_l'], col_positions[0])
 
-    # Card 2 (émeraude) — Taux réalisation ou croissance MoM
+    # Card 2 (émeraude) — Taux réalisation ou croissance MoM ou quantité
     taux = kpis.get('taux_realisation_global')
     if taux is not None:
         delta = taux - 100
@@ -615,12 +639,26 @@ def _build_kpi_cards(kpis, cm):
               W['k2'], W['k2_l'], col_positions[1])
     else:
         mom = kpis.get('mom_growth')
-        c2 = ('CROISSANCE MoM',
-              fpct(mom) if mom is not None else '—',
-              mom, 'vs mois précédent',
-              W['k2'], W['k2_l'], col_positions[1])
+        if mom is not None:
+            c2 = ('CROISSANCE MoM', fpct(mom), mom, 'vs mois précédent',
+                  W['k2'], W['k2_l'], col_positions[1])
+        else:
+            # Fallback : quantité totale ou nb produits distincts
+            qty    = kpis.get('qty_total', 0)
+            n_prod = kpis.get('n_produits', 0)
+            n_cat  = kpis.get('n_categories', 0)
+            if qty and qty > 0 and qty != float(kpis['n_rows']):
+                sub = f"{n_prod} produits · {n_cat} catégories" if n_prod > 0 else f"{kpis['n_rows']} lignes"
+                c2 = ('QTÉ TOTALE', fnum(qty), None, sub,
+                      W['k2'], W['k2_l'], col_positions[1])
+            elif n_prod > 0:
+                c2 = ('NB PRODUITS', str(n_prod), None, 'références actives',
+                      W['k2'], W['k2_l'], col_positions[1])
+            else:
+                c2 = ('TRANSACTIONS', fnum(kpis['n_rows']), None, 'enregistrements',
+                      W['k2'], W['k2_l'], col_positions[1])
 
-    # Card 3 (ambre) — CA potentiel ou Stock total ou Panier moyen
+    # Card 3 (ambre) — CA potentiel ou Stock total ou Prix moyen ou Panier moyen
     ca_pot     = kpis.get('ca_potentiel')
     stock_tot  = kpis.get('stock_total')
     if ca_pot and ca_pot > 0:
@@ -631,9 +669,18 @@ def _build_kpi_cards(kpis, cm):
         c3 = ('STOCK TOTAL', fnum(stock_tot), None,
               f"Ruptures : {kpis.get('n_ruptures', 0)}",
               W['k3'], W['k3_l'], col_positions[2])
-    else:
+    elif kpis.get('n_clients', 0) > 0:
         c3 = ('PANIER MOYEN', feur(kpis.get('panier_moy', 0)), None,
-              f"{kpis.get('n_clients', 0)} clients",
+              f"{kpis['n_clients']} clients",
+              W['k3'], W['k3_l'], col_positions[2])
+    elif kpis.get('prix_moyen') is not None:
+        c3 = ('PRIX MOYEN', feur(kpis['prix_moyen']), None,
+              'Prix unitaire moyen',
+              W['k3'], W['k3_l'], col_positions[2])
+    else:
+        pm = kpis.get('panier_moy', 0)
+        c3 = ('VALEUR MOY/LIGNE', feur(pm), None,
+              f"{kpis['n_rows']} transactions",
               W['k3'], W['k3_l'], col_positions[2])
 
     # Card 4 (sky) — Ruptures stock ou Taux livraison ou Nb produits
@@ -919,7 +966,7 @@ def build_modern_dashboard(wb, df, kpis, cm, insights):
     for c in range(1, 22):
         ws.cell(84, c).fill = fill(W['hdr_bg'])
     ws.merge_cells(start_row=84, start_column=2, end_row=84, end_column=20)
-    cell_f = ws.cell(84, 2, 'Dashboard Excel Generator v3.0 · Modern BI · Expert Data Analyst')
+    cell_f = ws.cell(84, 2, 'Dashboard Excel Generator v4.1 · Modern BI · Expert Data Analyst')
     s(cell_f, bg=W['hdr_bg'], fg=W['txt_light'], sz=9, h='center', v='center')
 
     # Masquer colonnes data
@@ -1082,11 +1129,11 @@ def build_analyse_sheet(wb, df, kpis, cm):
     ws = wb.create_sheet('🔍 Analyse')
     ws.sheet_view.showGridLines = False
 
-    for c in range(1, 16): cw(ws, c, 14)
+    for c in range(1, 16): cw(ws, c, 15)
     rh(ws, 1, 8);  rh(ws, 2, 30);  rh(ws, 3, 8)
-    for r in range(4, 55): rh(ws, r, 16)
+    for r in range(4, 80): rh(ws, r, 16)
 
-    for r in range(1, 57):
+    for r in range(1, 82):
         for c in range(1, 16): ws.cell(r, c).fill = fill(W['bg'])
     for r in [1, 2]:
         for c in range(1, 16): ws.cell(r, c).fill = fill(W['hdr_bg'])
@@ -1094,66 +1141,210 @@ def build_analyse_sheet(wb, df, kpis, cm):
        bg=W['hdr_bg'], fg=W['white'], sz=15, bold=True, h='center', v='center')
     for c in range(1, 16): ws.cell(2, c).border = bottom_border(W['hdr_accent'])
 
-    # Section Statuts
+    cur_row = 3  # curseur de ligne courant
+
+    # ── SECTION 1 : RÉCAPITULATIF GÉNÉRAL (toujours affiché) ─────────────────
+    mg(ws, cur_row, 1, cur_row, 8, '📋 RÉCAPITULATIF GÉNÉRAL',
+       bg=W['k1'], fg=W['white'], sz=11, bold=True, h='center', v='center')
+    cur_row += 1
+
+    ca_total  = kpis.get('ca_total', 0)
+    n_rows    = kpis.get('n_rows', 0)
+    n_prod    = kpis.get('n_produits', 0)
+    n_cat     = kpis.get('n_categories', 0)
+    n_cli     = kpis.get('n_clients', 0)
+    qty_tot   = kpis.get('qty_total', 0)
+    prix_moy  = kpis.get('prix_moyen')
+    panier    = kpis.get('panier_moy', 0)
+
+    recap_items = [
+        ('CA Total',           feur(ca_total)),
+        ('Nb lignes',          fnum(n_rows)),
+        ('Nb produits',        str(n_prod) if n_prod > 0 else '—'),
+        ('Nb catégories',      str(n_cat) if n_cat > 0 else '—'),
+        ('Nb clients',         str(n_cli) if n_cli > 0 else '—'),
+        ('Quantité totale',    fnum(qty_tot) if qty_tot and qty_tot != float(n_rows) else '—'),
+        ('Prix moyen',         feur(prix_moy) if prix_moy else '—'),
+        ('Valeur moy/ligne',   feur(panier) if panier else '—'),
+    ]
+    for j, (lbl, val) in enumerate(recap_items):
+        col = (j % 4) * 2 + 1   # colonnes 1,3,5,7 puis 1,3,5,7
+        row = cur_row + (j // 4)
+        cell_l = ws.cell(row, col, lbl)
+        cell_v = ws.cell(row, col + 1, val)
+        s(cell_l, bg=W['muted'],  fg=W['txt_mid'],  sz=9,  bold=True,  h='left',   v='center')
+        s(cell_v, bg=W['white'],  fg=W['k1'],        sz=11, bold=True,  h='center', v='center')
+        cell_l.border = thin_border(W['sep'])
+        cell_v.border = thin_border(W['sep'])
+
+    cur_row += 2 + 1  # 2 rangées de recap + 1 espace
+
+    # ── SECTION 2 : TOP PRODUITS (toujours affiché si données produit) ────────
+    top_prod = kpis.get('top_produits', {})
+    if not top_prod:
+        # Calculer depuis df si possible
+        prod_col = cm.get('produit')
+        ca_col   = cm.get('ca')
+        if prod_col and ca_col and prod_col in df.columns and ca_col in df.columns:
+            grp = (df.groupby(prod_col)[ca_col]
+                   .apply(lambda x: pd.to_numeric(x, errors='coerce').sum())
+                   .sort_values(ascending=False).head(10))
+            top_prod = {str(k): safe_float(v) for k, v in grp.items()}
+
+    if top_prod:
+        mg(ws, cur_row, 1, cur_row, 8, '🏆 TOP PRODUITS PAR CA',
+           bg=W['k2'], fg=W['white'], sz=11, bold=True, h='center', v='center')
+        cur_row += 1
+        tot_ca = ca_total or 1
+        hdrs_tp = ['#', 'Produit / Article', 'CA (€)', '% du Total', 'Part visuelle']
+        h_cols  = [1, 2, 5, 6, 7]
+        for col_i, h_txt in zip(h_cols, hdrs_tp):
+            cell = ws.cell(cur_row, col_i, h_txt)
+            s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+        cur_row += 1
+        for idx, (k, v) in enumerate(list(top_prod.items())[:10], 1):
+            pct  = v / tot_ca * 100 if tot_ca > 0 else 0
+            rbg  = W['white'] if idx % 2 == 0 else W['muted']
+            bar  = '█' * min(int(pct / 4) + 1, 15)
+            row_vals = [(1, str(idx)), (2, str(k)[:30]), (5, feur(v)), (6, fpct(pct)), (7, bar)]
+            for col_i, cv in row_vals:
+                cell = ws.cell(cur_row, col_i, cv)
+                fg = W['k2'] if col_i == 7 else (W['k1'] if col_i == 1 else W['txt_dark'])
+                s(cell, bg=rbg, fg=fg, sz=10, bold=(col_i == 2),
+                  h='left' if col_i == 2 else 'center', v='center')
+                cell.border = thin_border(W['sep'])
+            cur_row += 1
+
+        # Graphique bar Top Produits
+        chart_row_start = cur_row - len(top_prod) - 1
+        n_tp = len(top_prod)
+        if n_tp >= 2:
+            ws.cell(chart_row_start - 1, 10, 'Produit')
+            ws.cell(chart_row_start - 1, 11, 'CA')
+            for i, (k, v) in enumerate(list(top_prod.items())[:10]):
+                ws.cell(chart_row_start + i, 10, str(k)[:20])
+                ws.cell(chart_row_start + i, 11, safe_float(v))
+            bc_tp = BarChart()
+            bc_tp.type    = 'bar';  bc_tp.style = 10
+            bc_tp.title   = 'Top Produits par CA'
+            cats_tp = Reference(ws, min_col=10, min_row=chart_row_start, max_row=chart_row_start + n_tp - 1)
+            data_tp = Reference(ws, min_col=11, min_row=chart_row_start - 1, max_row=chart_row_start + n_tp - 1)
+            bc_tp.add_data(data_tp, titles_from_data=True)
+            bc_tp.set_categories(cats_tp)
+            bc_tp.series[0].graphicalProperties.solidFill = W['k2']
+            bc_tp.width = 14;  bc_tp.height = 10
+            anchor = f"I{chart_row_start}"
+            ws.add_chart(bc_tp, anchor)
+
+        cur_row += 1  # espace
+
+    # ── SECTION 3 : RÉPARTITION PAR CATÉGORIE (si disponible) ────────────────
+    top_cat = kpis.get('top_categories', {})
+    if top_cat:
+        mg(ws, cur_row, 1, cur_row, 8, '📂 RÉPARTITION PAR CATÉGORIE',
+           bg=W['k3'], fg=W['white'], sz=11, bold=True, h='center', v='center')
+        cur_row += 1
+        tot_ca = ca_total or 1
+        hdrs_cat = ['#', 'Catégorie', 'CA (€)', '% Total', 'Tendance']
+        h_cols   = [1, 2, 5, 6, 7]
+        for col_i, h_txt in zip(h_cols, hdrs_cat):
+            cell = ws.cell(cur_row, col_i, h_txt)
+            s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+        cur_row += 1
+        for idx, (k, v) in enumerate(list(top_cat.items())[:8], 1):
+            pct  = v / tot_ca * 100 if tot_ca > 0 else 0
+            rbg  = W['white'] if idx % 2 == 0 else W['muted']
+            bar  = '▓' * min(int(pct / 4) + 1, 15)
+            for col_i, cv in [(1, str(idx)), (2, str(k)[:30]), (5, feur(v)), (6, fpct(pct)), (7, bar)]:
+                cell = ws.cell(cur_row, col_i, cv)
+                fg = W['k3'] if col_i == 7 else W['txt_dark']
+                s(cell, bg=rbg, fg=fg, sz=10, bold=(col_i == 2),
+                  h='left' if col_i == 2 else 'center', v='center')
+                cell.border = thin_border(W['sep'])
+            cur_row += 1
+        cur_row += 1  # espace
+
+    # ── SECTION 4 : RÉPARTITION PAR STATUT (si disponible) ───────────────────
     statut_vc = kpis.get('statut_vc', {})
     if statut_vc:
-        mg(ws, 3, 1, 3, 5, '📊 RÉPARTITION PAR STATUT',
+        mg(ws, cur_row, 1, cur_row, 8, '🚦 RÉPARTITION PAR STATUT',
            bg=W['k4'], fg=W['white'], sz=11, bold=True, h='center', v='center')
+        cur_row += 1
         total_s = sum(statut_vc.values())
         STAT_COLORS = {
             'livré': W['k2'], 'livrée': W['k2'], 'delivered': W['k2'],
             'annulé': W['down'], 'annulée': W['down'], 'cancelled': W['down'],
             'en attente': W['k3'], 'en cours': W['k4'],
         }
-        for j, h in enumerate(['Statut', 'Nb', '%', 'Barre']):
-            cell = ws.cell(4, j+1, h)
+        for col_i, h_txt in [(1, 'Statut'), (3, 'Nb'), (4, '%'), (5, 'Barre')]:
+            cell = ws.cell(cur_row, col_i, h_txt)
             s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+        cur_row += 1
         for idx, (st, cnt) in enumerate(sorted(statut_vc.items(), key=lambda x: -x[1]), 1):
-            r   = 4 + idx
             pct = cnt / total_s * 100 if total_s > 0 else 0
             rbg = W['white'] if idx % 2 == 0 else W['muted']
             clr = next((v for k, v in STAT_COLORS.items() if k in str(st).lower()), W['txt_mid'])
             bar = '█' * min(int(pct / 5) + 1, 12)
-            for j, cv in enumerate([str(st), str(cnt), fpct(pct), bar]):
-                cell = ws.cell(r, j+1, cv)
-                fg   = clr if j == 3 else W['txt_dark']
-                s(cell, bg=rbg, fg=fg, sz=10, bold=(j==0), h='center' if j != 0 else 'left')
+            for col_i, cv in [(1, str(st)), (3, str(cnt)), (4, fpct(pct)), (5, bar)]:
+                cell = ws.cell(cur_row, col_i, cv)
+                fg = clr if col_i == 5 else W['txt_dark']
+                s(cell, bg=rbg, fg=fg, sz=10, bold=(col_i == 1),
+                  h='left' if col_i == 1 else 'center', v='center')
                 cell.border = thin_border(W['sep'])
+            cur_row += 1
+        cur_row += 1  # espace
 
-        # Pie chart statuts
-        ws.cell(3, 7, 'Statut'); ws.cell(3, 8, 'Nb')
-        for i, (st, cnt) in enumerate(statut_vc.items(), 1):
-            ws.cell(3+i, 7, str(st)[:15]); ws.cell(3+i, 8, int(cnt))
-        pie_s = PieChart()
-        pie_s.title = "Répartition Statuts"
-        pie_s.style = 10
-        cats_s = Reference(ws, min_col=7, min_row=4, max_row=3+len(statut_vc))
-        data_s = Reference(ws, min_col=8, min_row=3, max_row=3+len(statut_vc))
-        pie_s.add_data(data_s, titles_from_data=True)
-        pie_s.set_categories(cats_s)
-        pie_s.dataLabels = DataLabelList()
-        pie_s.dataLabels.showPercent = True
-        for i in range(len(statut_vc)):
-            pt = DataPoint(idx=i)
-            pt.graphicalProperties.solidFill = CHART_PAL[i % len(CHART_PAL)]
-            pie_s.series[0].dPt.append(pt)
-        pie_s.width = 12;  pie_s.height = 10
-        ws.add_chart(pie_s, 'G4')
-
-    # Section Remise
+    # ── SECTION 5 : ANALYSE REMISES (si disponible) ───────────────────────────
     rem = kpis.get('remise_moy')
     if rem is not None:
-        row_rem = 4 + len(statut_vc) + 3 if statut_vc else 5
-        mg(ws, row_rem, 1, row_rem, 5, '💰 ANALYSE REMISES',
+        mg(ws, cur_row, 1, cur_row, 5, '💰 ANALYSE REMISES',
            bg=W['k3'], fg=W['white'], sz=11, bold=True, h='center', v='center')
-        for j, (lbl, val) in enumerate([
-            ('Remise moyenne', fpct(rem)),
-            ('CA total', feur(kpis.get('ca_total', 0))),
-            ('Impact remise estimé', feur(kpis.get('ca_total', 0) * rem / 100)),
-        ]):
-            r = row_rem + 1 + j
-            ws.cell(r, 1, lbl); s(ws.cell(r, 1), bg=W['muted'], fg=W['txt_mid'], sz=10, bold=True)
-            ws.cell(r, 2, val); s(ws.cell(r, 2), bg=W['white'], fg=W['k3'], sz=12, bold=True, h='center')
+        cur_row += 1
+        for lbl, val in [
+            ('Remise moyenne',        fpct(rem)),
+            ('CA total',              feur(ca_total)),
+            ('Impact remise estimé',  feur(ca_total * rem / 100)),
+        ]:
+            ws.cell(cur_row, 1, lbl)
+            s(ws.cell(cur_row, 1), bg=W['muted'], fg=W['txt_mid'], sz=10, bold=True)
+            ws.cell(cur_row, 2, val)
+            s(ws.cell(cur_row, 2), bg=W['white'], fg=W['k3'], sz=12, bold=True, h='center')
+            cur_row += 1
+        cur_row += 1
+
+    # ── SECTION 6 : STATISTIQUES NUMÉRIQUES (toujours affiché) ───────────────
+    num_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+    num_cols = [c for c in num_cols if c != 'Mois/Année' and
+                not any(x in c.lower() for x in ['unnamed', 'index'])][:6]
+    if num_cols:
+        mg(ws, cur_row, 1, cur_row, 8, '📐 STATISTIQUES NUMÉRIQUES',
+           bg=W['hdr_bg'], fg=W['white'], sz=11, bold=True, h='center', v='center')
+        cur_row += 1
+        for col_i, h_txt in [(1, 'Colonne'), (3, 'Min'), (4, 'Max'),
+                              (5, 'Moyenne'), (6, 'Somme'), (7, 'Nb non-nuls')]:
+            cell = ws.cell(cur_row, col_i, h_txt)
+            s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
+        cur_row += 1
+        for idx, col in enumerate(num_cols):
+            s_col = pd.to_numeric(df[col], errors='coerce').dropna()
+            if len(s_col) == 0:
+                continue
+            rbg = W['white'] if idx % 2 == 0 else W['muted']
+            stats = [
+                (1, str(col)[:20]),
+                (3, fnum(s_col.min())),
+                (4, fnum(s_col.max())),
+                (5, fnum(s_col.mean())),
+                (6, fnum(s_col.sum())),
+                (7, str(len(s_col))),
+            ]
+            for col_i, cv in stats:
+                cell = ws.cell(cur_row, col_i, cv)
+                s(cell, bg=rbg, fg=W['txt_dark'], sz=10, bold=(col_i == 1),
+                  h='left' if col_i == 1 else 'center', v='center')
+                cell.border = thin_border(W['sep'])
+            cur_row += 1
+
     return ws
 
 
@@ -1232,7 +1423,7 @@ def build_raw_data_sheet(wb, df, cm):
 
 def build_tcd_source_sheet(wb, df, cm):
     ws = wb.create_sheet('📝 Source TCD')
-    ws.freeze_panes = 'A2'
+    ws.sheet_view.showGridLines = False
 
     # Colonnes pertinentes pour TCD
     tcd_roles = ['date', 'client', 'produit', 'categorie', 'marque',
@@ -1241,32 +1432,64 @@ def build_tcd_source_sheet(wb, df, cm):
     if 'Mois/Année' in df.columns:
         tcd_cols = ['Mois/Année'] + [c for c in tcd_cols if c != 'Mois/Année']
     if not tcd_cols:
-        tcd_cols = list(df.columns)
+        tcd_cols = [c for c in df.columns if c != 'Mois/Année']
+        if 'Mois/Année' in df.columns:
+            tcd_cols = ['Mois/Année'] + tcd_cols
 
+    # ── Ligne 1 : Bandeau instructions ──────────────────────────────────────
+    instr = ('💡  COMMENT CRÉER UN TABLEAU CROISÉ DYNAMIQUE  →  '
+             '1) Cliquez sur la table ci-dessous  '
+             '2) Onglet "Insertion"  '
+             '3) "Tableau croisé dynamique"  '
+             '4) Glissez les champs dans Lignes / Colonnes / Valeurs')
+    for c in range(1, len(tcd_cols) + 1):
+        ws.cell(1, c).fill = fill(W['k1_l'])
+    try:
+        ws.merge_cells(start_row=1, start_column=1,
+                       end_row=1, end_column=max(len(tcd_cols), 6))
+    except Exception:
+        pass
+    cell_i = ws.cell(1, 1, instr)
+    s(cell_i, bg=W['k1_l'], fg=W['k1'], sz=9, bold=True, h='left', v='center', wrap=True)
+    rh(ws, 1, 32)
+
+    # ── Ligne 2 : En-têtes colonnes ──────────────────────────────────────────
     for j, col in enumerate(tcd_cols, 1):
-        cell = ws.cell(1, j, col)
+        cell = ws.cell(2, j, col)
         s(cell, bg=W['hdr_bg'], fg=W['white'], sz=10, bold=True, h='center', v='center')
-        cw(ws, j, 16)
-    rh(ws, 1, 22)
+        cw(ws, j, max(14, min(len(str(col)) * 1.4, 28)))
+    rh(ws, 2, 22)
 
-    for i, row in enumerate(df[tcd_cols].itertuples(index=False), 2):
+    # ── Lignes données ───────────────────────────────────────────────────────
+    for i, row in enumerate(df[tcd_cols].itertuples(index=False), 3):
         rbg = W['white'] if i % 2 == 0 else W['muted']
         for j, val in enumerate(row, 1):
             cell = ws.cell(i, j)
             sv = safe_val(val)
-            cell.value = sv if (sv is not None and str(sv) != 'nan') else ''
+            if sv is None or str(sv) == 'nan':
+                cell.value = ''
+            elif isinstance(sv, (int, float)) and not isinstance(sv, bool):
+                cell.value = sv
+            else:
+                cell.value = str(sv)
             s(cell, bg=rbg, fg=W['txt_dark'], sz=10, h='center', v='center')
         rh(ws, i, 15)
 
-    if len(df) > 0 and len(tcd_cols) > 0:
+    # ── Excel Table (permet Insertion → TCD natif dans Excel) ────────────────
+    n_data = len(df)
+    if n_data > 0 and len(tcd_cols) > 0:
         try:
+            end_col_l = get_column_letter(len(tcd_cols))
             tab = Table(displayName='SourceTCD',
-                        ref=f"A1:{get_column_letter(len(tcd_cols))}{len(df)+1}")
+                        ref=f"A2:{end_col_l}{n_data + 2}")
             tab.tableStyleInfo = TableStyleInfo(
-                name='TableStyleLight1', showRowStripes=True)
+                name='TableStyleMedium9', showRowStripes=True,
+                showFirstColumn=False, showLastColumn=False)
             ws.add_table(tab)
         except Exception as e:
             logger.warning(f"Source TCD Table: {e}")
+
+    ws.freeze_panes = 'A3'
     return ws
 
 
@@ -1341,7 +1564,7 @@ def generate_excel_dashboard(file_bytes, filename, user_email=''):
 def health():
     return jsonify({
         'status':    'ok',
-        'version':   '4.0.0',
+        'version':   '4.1.0',
         'timestamp': datetime.now().isoformat(),
     })
 

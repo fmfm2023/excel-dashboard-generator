@@ -59,13 +59,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
 .dz-text { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
 .dz-hint { font-size: 12px; color: var(--text-muted); }
 .dz-file-info { font-size: 13px; color: var(--emerald); font-weight: 600; margin-top: 8px; min-height: 18px; }
-.email-input {
-  width: 100%; background: rgba(15,23,42,.8); border: 1px solid var(--border);
-  border-radius: 10px; padding: 12px 16px; color: var(--text); font-size: 14px;
-  margin-bottom: 14px; outline: none; transition: border-color .2s;
-}
-.email-input:focus { border-color: var(--indigo); }
-.email-input::placeholder { color: var(--text-muted); }
 .btn-generate {
   width: 100%; background: linear-gradient(135deg, var(--indigo), var(--sky));
   color: #fff; border: none; border-radius: 10px; padding: 14px;
@@ -260,8 +253,7 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
     </div>
     <p class="upload-subtitle">
       Uploadez n'importe quel fichier Excel ou CSV — obtenez un dashboard interactif
-      de niveau <strong>Power BI</strong> directement dans votre navigateur, et recevez
-      un rapport Excel complet par email.
+      de niveau <strong>Power BI</strong> directement dans votre navigateur.
     </p>
     <div class="drop-zone" id="drop-zone">
       <input type="file" id="file-input" accept=".xlsx,.xls,.csv,.xlsm" />
@@ -270,8 +262,6 @@ body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); co
       <div class="dz-hint">ou cliquez pour parcourir — Excel (.xlsx, .xls) ou CSV</div>
       <div class="dz-file-info" id="dz-file-info"></div>
     </div>
-    <input type="email" class="email-input" id="email-input"
-           placeholder="📧 Votre email pour recevoir le rapport Excel complet" />
     <button class="btn-generate" id="btn-generate" onclick="startDashboard()">
       ✨ Générer le Dashboard Interactif
     </button>
@@ -1094,7 +1084,6 @@ dz.addEventListener('drop', e => {
 
 function startDashboard() {
   if (!G.fileBytes) { showToast('error','⚠ Veuillez d\'abord sélectionner un fichier.'); return; }
-  G.userEmail = document.getElementById('email-input').value.trim();
   setLoading('📊 Lecture du fichier…');
 
   setTimeout(() => {
@@ -1158,7 +1147,6 @@ function resetToUpload() {
   if (tcdChart) { try { tcdChart.destroy(); } catch(e){} tcdChart = null; }
   Object.assign(G, { rawData:[], filteredData:[], headers:[], colMap:{}, numericCols:[], catCols:[], filterSelected:{}, kpis:{}, fileBytes:null, fileName:'', fileType:'', userEmail:'' });
   document.getElementById('dz-file-info').textContent = '';
-  document.getElementById('email-input').value = '';
   document.getElementById('filter-container').innerHTML = '<div class="no-filters">Chargement…</div>';
   document.getElementById('kpi-row').innerHTML = '';
   document.getElementById('insights-grid').innerHTML = '';
